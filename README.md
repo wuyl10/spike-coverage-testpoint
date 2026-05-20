@@ -19,13 +19,112 @@
 
 ## 快速使用
 
-先校验 target：
+### 什么情况用
+
+当你想从 Spike 覆盖率反推“还应该补哪些 hyptest 测试点”时，用这个 skill。
+
+典型场景：
+
+- 看某次 Spike gcov 覆盖率哪里没跑到。
+- 只分析某个目标，比如 MemBlock、frontend、AMO、vector load/store。
+- 根据低 line/branch/call coverage 设计高质量测试点。
+- 把覆盖率证据整理成交给 `hyptest-workflow` 的测试点计划。
+
+不适合直接用它做的事：
+
+- 分析 FAILED/timeout/mismatch 日志：用 failure triage。
+- 直接写 hyptest case、改 `test_register.c`：分析完后再交给 `hyptest-workflow`。
+
+### 怎么 prompt
+
+最常用的方式是直接告诉 Codex：目标、覆盖率文件、是否要排除什么、输出要计划还是交接包。
+
+通用模板：
+
+```text
+用 spike-coverage-testpoint 分析 Spike 覆盖率。
+目标：<使用哪个 targets/*.json；如果没有就从 targets/TEMPLATE.json 新建>。
+覆盖率输入：<gcov summary / .gcov 目录 / coverage HTML 路径>。
+范围：<只看哪些模块/维度/文件/函数；要排除什么>。
+输出：<测试点规划 / hyptest-workflow handoff packet / 只建 target>。
+约束：<不要写 case / 不改 hyptest 文件 / 不包含 H 扩展等>。
+```
+
+#### 1. 分析 MemBlock non-H 覆盖率
+
+```text
+用 spike-coverage-testpoint 分析 Spike 覆盖率。
+目标用 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/memblock_non_h.json。
+coverage summary 用 /nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/gcov_raw/gcov_memblock_non_h_summary.txt。
+只要测试点规划，不要写 case。
+重点看哪些 MemBlock 相关代码、函数、分支、call 没覆盖或覆盖少，并给出值得补的高质量 hyptest 测试点。
+```
+
+#### 2. 只看某一类缺口
+
+```text
+用 spike-coverage-testpoint 看 MemBlock non-H 覆盖率里 vector whole/mask 和 vector indexed 的缺口。
+请读取 summary 和对应 .gcov，说明哪些 entry/branch/call 没覆盖，
+再判断应该补哪些测试点、observable 是什么、是否需要特殊 profile。
+不要写 case。
+```
+
+```text
+用 spike-coverage-testpoint 只分析 AMO/AMOCAS 覆盖率缺口。
+要区分 entry 覆盖和 MMU.amo / amo_compare_and_swap 语义覆盖。
+最后给 hyptest-workflow handoff packet。
+```
+
+#### 3. 换一个分析目标
+
+```text
+我要分析 Spike frontend 覆盖率，不是 MemBlock。
+请从 targets/TEMPLATE.json 新建一个 target，
+把我要测的 scope/spec/exclusion/dimensions 都放 target 文件里，
+不要写死进 SKILL.md 或脚本。
+先只建 target 并解释怎么用，不要分析覆盖率。
+```
+
+#### 4. 已经有候选，准备交接
+
+```text
+根据刚才的 Spike 覆盖率候选，生成 hyptest-workflow 交接包。
+每个候选要包含 coverage evidence、source/gcov evidence、target_semantic、
+expected observable、duplicate search terms、gate note。
+不要改任何 hyptest 文件。
+```
+
+#### 5. 要真正写 case
+
+先用本 skill 得到测试点计划。然后再说：
+
+```text
+根据上面的 handoff packet，用 hyptest-workflow 写前 2 个 case，
+做查重、选位置、更新 test_point/test_register.c、编译并跑 spike。
+```
+
+## 输出应该长什么样
+
+一次好的分析应该至少包含：
+
+- 覆盖率输入：target、summary、gcov 目录。
+- 高优先级缺口：按维度排序，带 line/branch/call/0% entry 证据。
+- 行级证据：具体 `.gcov` 文件、源码行、函数、miss kind。
+- 测试点候选：missing scenario、test idea、observable、gate note。
+- 查重提示：应该在 hyptest 里搜哪些关键词。
+- handoff packet：后续交给 `hyptest-workflow` 写 case。
+
+## 高级：手动跑脚本
+
+通常不需要用户手动跑脚本，直接 prompt Codex 即可。需要复现或调试时可以这样跑。
+
+校验 target：
 
 ```bash
 python3 scripts/validate_target.py targets/memblock_non_h.json
 ```
 
-跑 MemBlock non-H summary：
+跑 summary：
 
 ```bash
 python3 scripts/analyze_spike_gcov.py \
@@ -36,7 +135,7 @@ python3 scripts/analyze_spike_gcov.py \
   --markdown > /tmp/spike_cov_memblock_analysis/summary.md
 ```
 
-精查重点 `.gcov`：
+精查 `.gcov`：
 
 ```bash
 python3 scripts/inspect_gcov_lines.py \
