@@ -1,0 +1,120 @@
+{
+  "skill_name": "spike-coverage-testpoint",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "用 targets/memblock_non_h.json 分析 /nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/gcov_raw/gcov_memblock_non_h_summary.txt，告诉我非 H MemBlock 覆盖率最应该补哪些高质量 hyptest 测试点，只要计划不要写 case。",
+      "expected_output": "Reads the target file, uses gcov evidence, applies the target exclusions, groups gaps by target dimensions, and ranks high-quality test-point candidates with observable assertions and suggested hyptest locations.",
+      "files": [
+        "/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/gcov_raw/gcov_memblock_non_h_summary.txt",
+        "/nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/memblock_non_h.json"
+      ],
+      "assertions": [
+        "Mentions the coverage summary path and the target file path/name.",
+        "Reads target spec/scope_in/scope_out instead of relying on hardcoded skill text.",
+        "Applies target exclusions such as HLV/HSV/HLVX and stage2/guest faults.",
+        "Validates or relies on a validated target file before analysis.",
+        "Uses scripts only for coverage evidence extraction/ranking, then performs agent reasoning for test-point candidates.",
+        "Uses target inspection_hints or source_priority to choose line-level gcov files for top candidates.",
+        "Ranks at least five candidates with coverage evidence and test observables in the final agent report.",
+        "Does not write or modify hyptest cases.",
+        "Includes a structured hyptest-workflow handoff packet for implementation.",
+        "Fills handoff semantic fields by agent reasoning rather than leaving raw script TODOs in the final answer."
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "从 Spike 覆盖率看 vector indexed 和 whole/mask 哪些没覆盖，使用 targets/memblock_non_h.json 这个目标，帮我列测试点，后续准备用 hyptest-workflow 写 case。",
+      "expected_output": "Uses the target file, focuses on vector indexed and whole/mask coverage gaps, identifies zero/low entries, proposes self-checkable vector test points, and explicitly hands off implementation to hyptest-workflow.",
+      "files": [],
+      "assertions": [
+        "Uses or asks for a concrete target file before analysis.",
+        "Focuses only on vector indexed and vector whole/mask candidates.",
+        "Identifies zero entries such as vsuxei/vsoxei/vl4re/vl8re/vsm when present in the snapshot.",
+        "Provides observable assertions for vector register or memory results.",
+        "Includes duplicate-search terms.",
+        "States that case implementation should use hyptest-workflow.",
+        "Does not treat the handoff packet as permission to write cases."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "mmu.h 调用覆盖很低。请用 targets/memblock_non_h.json 分析它对应哪些路径需要补。",
+      "expected_output": "Reads target scope, explains low call coverage as unhit call sites, maps mmu.h gaps to the target dimensions, applies exclusions, and prioritizes test-point ideas with observables.",
+      "files": [],
+      "assertions": [
+        "Mentions the selected target file and its exclusions.",
+        "Explains that call coverage means unexecuted call sites, not function coverage.",
+        "Maps mmu.h gaps to shared target paths rather than only instruction headers.",
+        "Excludes scenarios listed in target scope_out.",
+        "Proposes self-checkable candidates with trap/memory/register observables.",
+        "Marks memtracer/log style points as manual or special-run when appropriate."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "用 spike-coverage-testpoint 和 targets/memblock_non_h.json 对 mmu.cc.gcov 和 v_ext_macros.h.gcov 做行级精查：找 #####、branch never executed、call never executed，解释对应没覆盖的场景，并列出测试点候选。不要写 case。",
+      "expected_output": "Uses target-configured line-level gcov evidence from mmu.cc.gcov and v_ext_macros.h.gcov, groups misses by function/source line, interprets important uncovered branches/calls into in-scope scenarios, labels low-value or out-of-scope paths separately, and proposes self-checkable test-point candidates without editing cases.",
+      "files": [
+        "/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/gcov_raw/mmu.cc.gcov",
+        "/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/gcov_raw/v_ext_macros.h.gcov",
+        "/nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/memblock_non_h.json"
+      ],
+      "assertions": [
+        "Uses the target file for line-level evidence filtering and scope judgment.",
+        "Uses the line-level script only to extract source line numbers, functions, and gcov miss kinds.",
+        "Performs the scenario/value/test-point judgment in the agent analysis, not as a script claim.",
+        "Distinguishes semantic branches from defensive abort/default paths.",
+        "Translates at least three uncovered code paths into architecture-visible in-scope test ideas.",
+        "Marks special-run paths such as tracer/log separately when encountered.",
+        "Does not modify hyptest source files."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "我想换一个 Spike 覆盖率分析目标，只看 atomic 和 AMOCAS，不看 vector。帮我先建立一个可编辑 target 文件，不要把这个规格写进 SKILL.md 或脚本。",
+      "expected_output": "Creates or proposes a standalone target JSON derived from targets/TEMPLATE.json, places atomic/AMOCAS in scope_in/dimensions, places vector in scope_out/exclusion guidance, and leaves SKILL.md/scripts generic.",
+      "files": [
+        "/nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/TEMPLATE.json"
+      ],
+      "assertions": [
+        "Creates or describes a separate target file rather than editing hardcoded script logic.",
+        "Keeps target-specific scope and exclusions out of SKILL.md.",
+        "Puts the requested spec/profile assumptions in the target file.",
+        "Includes source_priority, inspection_hints, duplicate_search_terms, and handoff_defaults in the target or explains how to fill them.",
+        "Uses dimensions entries such as insn:lr_w, insn:sc_w, or glob:riscv/insns/amo*.h.",
+        "States that scripts collect evidence and the agent judges scenario/test value.",
+        "Does not modify hyptest source files."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "分析 Spike 覆盖率，但我还没决定目标和规格；不要猜，告诉我需要先填哪些 target 字段。",
+      "expected_output": "Refuses to proceed with hidden default scope, asks for or creates a target file from the template, and lists the required spec/scope/dimension/exclusion fields.",
+      "files": [
+        "/nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/TEMPLATE.json"
+      ],
+      "assertions": [
+        "Does not run analysis with an implicit all-riscv/default target.",
+        "Asks for or proposes a target file before coverage analysis.",
+        "Mentions required fields including spec, scope_in, scope_out, and dimensions.",
+        "Mentions validate_target.py as the check after creating or editing a target.",
+        "Keeps scripts evidence-only and agent-owned semantic judgment."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "根据已经选出来的覆盖率候选，准备交给 hyptest-workflow 写 case。请只生成交接包，不要改任何文件。",
+      "expected_output": "Produces a structured hyptest-workflow handoff packet with coverage evidence, semantic target, observable, duplicate-search terms, gate note, profile questions, and implementation owner, without editing files.",
+      "files": [],
+      "assertions": [
+        "Uses the structured hyptest-workflow handoff packet format.",
+        "Includes implementation_owner: hyptest-workflow.",
+        "Includes target_file, coverage evidence, expected observable, duplicate-search terms, and gate note.",
+        "May use build_handoff_packet.py for the skeleton but does not treat skeleton TODOs as final analysis.",
+        "States that hyptest-workflow must still do duplicate checks and profile/gate checks.",
+        "Does not modify hyptest source files."
+      ]
+    }
+  ]
+}

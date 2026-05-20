@@ -1,0 +1,70 @@
+{
+  "name": "fill_me",
+  "title": "Human-readable target name",
+  "description": "What this coverage analysis is trying to measure.",
+  "spec": {
+    "profile": "fill_me",
+    "source_of_truth": "Where the spec/scope decision comes from.",
+    "included_extensions_or_features": [],
+    "excluded_extensions_or_features": [],
+    "notes": [
+      "Keep target-specific spec assumptions here, not in SKILL.md or scripts."
+    ]
+  },
+  "scope_in": [
+    "List the architecture areas, Spike components, instruction classes, or behavior classes that belong in this target."
+  ],
+  "scope_out": [
+    "List exclusions so scripts can filter obvious noise and the agent can avoid proposing out-of-scope tests."
+  ],
+  "summary_include_regex": [
+    "^riscv/"
+  ],
+  "summary_exclude_prefixes": [],
+  "summary_exclude_regex": [],
+  "line_exclude_regex": [],
+  "line_priority_regex": [
+    "regex terms that should rank line-level functions higher for this target"
+  ],
+  "source_priority": [
+    "riscv/example.cc"
+  ],
+  "dimensions": {
+    "example shared paths": [
+      "riscv/mmu.cc",
+      "riscv/mmu.h"
+    ],
+    "example instruction group": [
+      "insn:lw",
+      "insn:sw"
+    ],
+    "example glob group": [
+      "glob:riscv/insns/amo*.h"
+    ]
+  },
+  "analysis_notes": [
+    "Optional notes for the agent about how to interpret coverage evidence for this target.",
+    "Keep target-specific spec assumptions here."
+  ],
+  "inspection_hints": {
+    "example shared paths": [
+      "example.cc.gcov",
+      "example.h.gcov"
+    ],
+    "example instruction group": [
+      "lw.h.gcov",
+      "sw.h.gcov"
+    ],
+    "example glob group": [
+      "amoadd_w.h.gcov",
+      "amocas_w.h.gcov"
+    ]
+  },
+  "duplicate_search_terms": {},
+  "handoff_defaults": {
+    "suggested_test_point_area": "",
+    "suggested_case_area": "",
+    "default_gate_note": "needs profile decision",
+    "implementation_owner": "hyptest-workflow"
+  }
+}

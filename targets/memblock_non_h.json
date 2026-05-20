@@ -1,0 +1,705 @@
+{
+  "name": "memblock_non_h",
+  "title": "MemBlock non-H coverage target",
+  "description": "Analyze Spike MemBlock-related coverage while excluding H extension and virtualization/stage2 targets.",
+  "spec": {
+    "profile": "memblock_non_h",
+    "source_of_truth": "Target-scoped coverage planning for official/community Spike and hyptest test-point design.",
+    "included_extensions_or_features": [
+      "integer scalar load/store",
+      "compressed memory instructions when present in Spike coverage",
+      "floating-point scalar load/store when present in Spike coverage",
+      "RISC-V vector load/store when present in Spike coverage",
+      "LR/SC and AMO/AMOCAS when present in Spike coverage",
+      "CBO/CMO when present in Spike coverage",
+      "stage1 address translation",
+      "PMP/PMA/PBMT",
+      "trigger/debug paths involving memory access",
+      "MMIO/device paths involving memory access"
+    ],
+    "excluded_extensions_or_features": [
+      "H extension",
+      "stage2 translation",
+      "guest page faults",
+      "HS/VS/VU virtualization targets"
+    ],
+    "notes": [
+      "This target defines coverage-analysis scope only. hyptest implementation still needs hyptest-workflow profile checks before writing cases."
+    ]
+  },
+  "scope_in": [
+    "scalar integer load/store",
+    "compressed memory instructions",
+    "floating-point scalar load/store",
+    "vector load/store",
+    "LR/SC",
+    "AMO/AMOCAS",
+    "CBO/CMO",
+    "fence/sfence",
+    "stage1 translation",
+    "TLB/PTE cache",
+    "PMP/PMA/PBMT",
+    "exception priority",
+    "trigger/debug",
+    "MMIO/device",
+    "memtracer/log paths"
+  ],
+  "scope_out": [
+    "H extension instruction entries such as HLV/HSV/HLVX",
+    "HS/VS/VU virtualization mode test targets",
+    "hgatp/vsatp/henvcfg control paths",
+    "stage2 translation",
+    "guest page faults and trap_*_guest_page_fault targets"
+  ],
+  "summary_include_regex": [
+    "^riscv/"
+  ],
+  "summary_exclude_prefixes": [
+    "hlv",
+    "hlvx",
+    "hsv"
+  ],
+  "summary_exclude_regex": [
+    "guest_page_fault",
+    "hgatp",
+    "vsatp",
+    "henvcfg",
+    "s2xlate"
+  ],
+  "line_exclude_regex": [
+    "s2xlate",
+    "hgatp",
+    "vsatp",
+    "henvcfg",
+    "\\bhstatus\\b",
+    "HSTATUS_",
+    "forced_virt",
+    "\\bhlv",
+    "\\bhsv",
+    "\\bhlvx",
+    "guest_page_fault",
+    "\\bguest\\b"
+  ],
+  "line_priority_regex": [
+    "mmu_t::(load|store|fetch|translate|walk|refill|flush|check_triggers|pmp|pma|amo|load_reserved|store_conditional|register_memtracer|clean_inval|cbo)",
+    "trigger.*(load|store|execute|match|timing|mcontrol|simple_match)",
+    "\\b(load|store|fetch|amo|lr|sc|cbo|sfence|pmp|pma|pbmt|tlb|pte|misalign|access_fault|page_fault|mmio|memtracer|trace)\\b",
+    "VI_(LD|ST|LDST|LD_WHOLE|ST_WHOLE|LD_INDEX|ST_INDEX)",
+    "vstart|mask|fault-only-first|whole|indexed|strided|reservation|compare_and_swap"
+  ],
+  "source_priority": [
+    "riscv/mmu.cc",
+    "riscv/mmu.h",
+    "riscv/v_ext_macros.h",
+    "riscv/execute.cc",
+    "riscv/triggers.cc",
+    "riscv/processor.cc",
+    "riscv/csrs.cc"
+  ],
+  "dimensions": {
+    "core shared paths": [
+      "riscv/mmu.cc",
+      "riscv/mmu.h",
+      "riscv/execute.cc",
+      "riscv/processor.cc",
+      "riscv/csrs.cc",
+      "riscv/triggers.cc",
+      "riscv/sim.cc",
+      "riscv/vector_unit.cc",
+      "riscv/v_ext_macros.h",
+      "riscv/trap.h",
+      "riscv/memtracer.h",
+      "riscv/bloom_filter.h"
+    ],
+    "alignment/boundary shared paths": [
+      "riscv/mmu.cc",
+      "riscv/mmu.h",
+      "riscv/trap.h"
+    ],
+    "stage1 translation and TLB": [
+      "riscv/mmu.cc",
+      "riscv/mmu.h",
+      "riscv/csrs.cc",
+      "riscv/bloom_filter.h",
+      "insn:sfence_vma"
+    ],
+    "PMP/PMA/PBMT shared paths": [
+      "riscv/mmu.cc",
+      "riscv/mmu.h",
+      "riscv/csrs.cc",
+      "riscv/trap.h"
+    ],
+    "trigger/debug memory paths": [
+      "riscv/mmu.cc",
+      "riscv/triggers.cc",
+      "riscv/processor.cc",
+      "riscv/trap.h"
+    ],
+    "MMIO/device paths": [
+      "riscv/mmu.cc",
+      "riscv/sim.cc",
+      "riscv/trap.h"
+    ],
+    "memtracer/log paths": [
+      "riscv/mmu.cc",
+      "riscv/memtracer.h",
+      "riscv/execute.cc"
+    ],
+    "vector shared paths": [
+      "riscv/v_ext_macros.h",
+      "riscv/vector_unit.cc",
+      "riscv/mmu.cc",
+      "riscv/mmu.h",
+      "riscv/execute.cc"
+    ],
+    "scalar load/store": [
+      "insn:lb",
+      "insn:lbu",
+      "insn:lh",
+      "insn:lhu",
+      "insn:lw",
+      "insn:lwu",
+      "insn:ld",
+      "insn:sb",
+      "insn:sh",
+      "insn:sw",
+      "insn:sd"
+    ],
+    "compressed memory": [
+      "insn:c_lw",
+      "insn:c_lwsp",
+      "insn:c_ld",
+      "insn:c_ldsp",
+      "insn:c_lbu",
+      "insn:c_lh",
+      "insn:c_lhu",
+      "insn:c_sw",
+      "insn:c_swsp",
+      "insn:c_sd",
+      "insn:c_sdsp",
+      "insn:c_sb",
+      "insn:c_sh",
+      "insn:c_flw",
+      "insn:c_flwsp",
+      "insn:c_fld",
+      "insn:c_fldsp",
+      "insn:c_fsw",
+      "insn:c_fswsp",
+      "insn:c_fsd",
+      "insn:c_fsdsp"
+    ],
+    "FP scalar memory": [
+      "insn:flh",
+      "insn:flw",
+      "insn:fld",
+      "insn:flq",
+      "insn:fsh",
+      "insn:fsw",
+      "insn:fsd",
+      "insn:fsq"
+    ],
+    "vector unit-stride": [
+      "insn:vle8_v",
+      "insn:vle16_v",
+      "insn:vle32_v",
+      "insn:vle64_v",
+      "insn:vse8_v",
+      "insn:vse16_v",
+      "insn:vse32_v",
+      "insn:vse64_v"
+    ],
+    "vector strided": [
+      "insn:vlse8_v",
+      "insn:vlse16_v",
+      "insn:vlse32_v",
+      "insn:vlse64_v",
+      "insn:vsse8_v",
+      "insn:vsse16_v",
+      "insn:vsse32_v",
+      "insn:vsse64_v"
+    ],
+    "vector indexed": [
+      "insn:vluxei8_v",
+      "insn:vluxei16_v",
+      "insn:vluxei32_v",
+      "insn:vluxei64_v",
+      "insn:vloxei8_v",
+      "insn:vloxei16_v",
+      "insn:vloxei32_v",
+      "insn:vloxei64_v",
+      "insn:vsuxei8_v",
+      "insn:vsuxei16_v",
+      "insn:vsuxei32_v",
+      "insn:vsuxei64_v",
+      "insn:vsoxei8_v",
+      "insn:vsoxei16_v",
+      "insn:vsoxei32_v",
+      "insn:vsoxei64_v"
+    ],
+    "vector fault-only-first": [
+      "insn:vle8ff_v",
+      "insn:vle16ff_v",
+      "insn:vle32ff_v",
+      "insn:vle64ff_v"
+    ],
+    "vector whole/mask": [
+      "insn:vl1re8_v",
+      "insn:vl1re16_v",
+      "insn:vl1re32_v",
+      "insn:vl1re64_v",
+      "insn:vl2re8_v",
+      "insn:vl2re16_v",
+      "insn:vl2re32_v",
+      "insn:vl2re64_v",
+      "insn:vl4re8_v",
+      "insn:vl4re16_v",
+      "insn:vl4re32_v",
+      "insn:vl4re64_v",
+      "insn:vl8re8_v",
+      "insn:vl8re16_v",
+      "insn:vl8re32_v",
+      "insn:vl8re64_v",
+      "insn:vs1r_v",
+      "insn:vs2r_v",
+      "insn:vs4r_v",
+      "insn:vs8r_v",
+      "insn:vlm_v",
+      "insn:vsm_v"
+    ],
+    "LR/SC": [
+      "insn:lr_w",
+      "insn:lr_d",
+      "insn:sc_w",
+      "insn:sc_d"
+    ],
+    "AMO/AMOCAS": [
+      "glob:riscv/insns/amo*.h"
+    ],
+    "CBO/CMO": [
+      "insn:cbo_clean",
+      "insn:cbo_flush",
+      "insn:cbo_inval",
+      "insn:cbo_zero"
+    ],
+    "fence/sfence": [
+      "insn:fence",
+      "insn:fence_i",
+      "insn:sfence_vma"
+    ]
+  },
+  "inspection_hints": {
+    "core shared paths": [
+      "mmu.cc.gcov",
+      "mmu.h.gcov",
+      "execute.cc.gcov",
+      "triggers.cc.gcov"
+    ],
+    "alignment/boundary shared paths": [
+      "mmu.cc.gcov",
+      "mmu.h.gcov",
+      "trap.h.gcov"
+    ],
+    "stage1 translation and TLB": [
+      "mmu.cc.gcov",
+      "mmu.h.gcov",
+      "csrs.cc.gcov",
+      "bloom_filter.h.gcov",
+      "sfence_vma.h.gcov"
+    ],
+    "PMP/PMA/PBMT shared paths": [
+      "mmu.cc.gcov",
+      "mmu.h.gcov",
+      "csrs.cc.gcov",
+      "trap.h.gcov"
+    ],
+    "trigger/debug memory paths": [
+      "mmu.cc.gcov",
+      "triggers.cc.gcov",
+      "processor.cc.gcov"
+    ],
+    "MMIO/device paths": [
+      "mmu.cc.gcov",
+      "sim.cc.gcov"
+    ],
+    "memtracer/log paths": [
+      "mmu.cc.gcov",
+      "memtracer.h.gcov",
+      "execute.cc.gcov"
+    ],
+    "vector shared paths": [
+      "v_ext_macros.h.gcov",
+      "vector_unit.cc.gcov",
+      "mmu.cc.gcov",
+      "execute.cc.gcov"
+    ],
+    "scalar load/store": [
+      "mmu.cc.gcov",
+      "mmu.h.gcov",
+      "lb.h.gcov",
+      "lw.h.gcov",
+      "sd.h.gcov"
+    ],
+    "compressed memory": [
+      "mmu.cc.gcov",
+      "mmu.h.gcov",
+      "c_lw.h.gcov",
+      "c_ld.h.gcov",
+      "c_sw.h.gcov",
+      "c_sd.h.gcov"
+    ],
+    "FP scalar memory": [
+      "mmu.cc.gcov",
+      "mmu.h.gcov",
+      "flw.h.gcov",
+      "fld.h.gcov",
+      "fsw.h.gcov",
+      "fsd.h.gcov"
+    ],
+    "vector unit-stride": [
+      "v_ext_macros.h.gcov",
+      "vle8_v.h.gcov",
+      "vse8_v.h.gcov",
+      "mmu.cc.gcov"
+    ],
+    "vector strided": [
+      "v_ext_macros.h.gcov",
+      "vlse16_v.h.gcov",
+      "vsse16_v.h.gcov",
+      "mmu.cc.gcov"
+    ],
+    "vector indexed": [
+      "v_ext_macros.h.gcov",
+      "vluxei8_v.h.gcov",
+      "vloxei8_v.h.gcov",
+      "vsuxei8_v.h.gcov",
+      "vsoxei8_v.h.gcov",
+      "mmu.cc.gcov"
+    ],
+    "vector fault-only-first": [
+      "v_ext_macros.h.gcov",
+      "vle8ff_v.h.gcov",
+      "vle16ff_v.h.gcov",
+      "execute.cc.gcov",
+      "mmu.cc.gcov"
+    ],
+    "vector whole/mask": [
+      "v_ext_macros.h.gcov",
+      "vl1re8_v.h.gcov",
+      "vl4re8_v.h.gcov",
+      "vl8re8_v.h.gcov",
+      "vsm_v.h.gcov",
+      "mmu.cc.gcov"
+    ],
+    "LR/SC": [
+      "mmu.cc.gcov",
+      "mmu.h.gcov",
+      "lr_w.h.gcov",
+      "sc_w.h.gcov"
+    ],
+    "AMO/AMOCAS": [
+      "mmu.cc.gcov",
+      "mmu.h.gcov",
+      "amoadd_w.h.gcov",
+      "amocas_w.h.gcov",
+      "amocas_d.h.gcov"
+    ],
+    "CBO/CMO": [
+      "mmu.cc.gcov",
+      "mmu.h.gcov",
+      "cbo_clean.h.gcov",
+      "cbo_zero.h.gcov"
+    ],
+    "fence/sfence": [
+      "mmu.cc.gcov",
+      "mmu.h.gcov",
+      "sfence_vma.h.gcov",
+      "fence_i.h.gcov"
+    ]
+  },
+  "analysis_notes": [
+    "Prioritize branch/call gaps in shared paths such as riscv/mmu.cc, riscv/mmu.h, riscv/v_ext_macros.h, riscv/execute.cc, and riscv/triggers.cc over one-line instruction entry coverage.",
+    "Treat scalar/vector/atomic/CBO entries as entry evidence first; inspect shared MMU/vector/trigger/fault paths before claiming semantic coverage.",
+    "High-value MemBlock candidates usually need an observable memory/register/trap/CSR/vector oracle and should exercise a reusable behavior class such as alignment, boundary split, fault conversion, PMP/PMA/PBMT, trigger timing, TLB/PTE cache refresh, vector mask/vstart/fault-only-first, LR/SC reservation, AMO/AMOCAS, or CBO gating.",
+    "Mark memtracer/log/device-specific paths as manual/special-run unless the default hyptest platform can observe them deterministically.",
+    "Do duplicate search by semantic terms as well as mnemonics before proposing implementation."
+  ],
+  "duplicate_search_terms": {
+    "core shared paths": [
+      "mmu",
+      "load slow path",
+      "store slow path",
+      "fetch slow path",
+      "translate",
+      "trap conversion"
+    ],
+    "alignment/boundary": [
+      "misaligned",
+      "unaligned",
+      "cross page",
+      "boundary",
+      "address misaligned",
+      "partial fault"
+    ],
+    "alignment/boundary shared paths": [
+      "misaligned",
+      "unaligned",
+      "cross page",
+      "boundary",
+      "address misaligned",
+      "partial fault"
+    ],
+    "stage1 translation and TLB": [
+      "sfence.vma",
+      "satp",
+      "PTE",
+      "A/D",
+      "stale",
+      "TLB",
+      "flush_tlb_ppn",
+      "bloom_filter"
+    ],
+    "PMP/PMA/PBMT shared paths": [
+      "PMP",
+      "TOR",
+      "NAPOT",
+      "partial",
+      "homogeneous",
+      "PMA",
+      "PBMT",
+      "access fault"
+    ],
+    "trigger/debug memory paths": [
+      "trigger",
+      "timing after",
+      "mcontrol",
+      "load trigger",
+      "store trigger",
+      "debug action"
+    ],
+    "MMIO/device paths": [
+      "PMA",
+      "MMIO",
+      "IO",
+      "non-idempotent",
+      "access fault",
+      "device"
+    ],
+    "memtracer/log paths": [
+      "memtracer",
+      "trace",
+      "commit log",
+      "log_mem",
+      "memory log"
+    ],
+    "scalar load/store": [
+      "lb",
+      "lh",
+      "lw",
+      "ld",
+      "lbu",
+      "lhu",
+      "lwu",
+      "sb",
+      "sh",
+      "sw",
+      "sd",
+      "misaligned load",
+      "misaligned store"
+    ],
+    "compressed memory": [
+      "compressed",
+      "c_lw",
+      "c_ld",
+      "c_lbu",
+      "c_lh",
+      "c_sb",
+      "c_sh",
+      "c_fld",
+      "c_fsd"
+    ],
+    "FP scalar memory": [
+      "flh",
+      "flw",
+      "fld",
+      "flq",
+      "fsh",
+      "fsw",
+      "fsd",
+      "fsq",
+      "FS dirty"
+    ],
+    "vector shared paths": [
+      "vstart",
+      "vl",
+      "vtype",
+      "mask",
+      "vector load",
+      "vector store",
+      "overlap",
+      "vill"
+    ],
+    "vector unit-stride": [
+      "vle8",
+      "vle16",
+      "vle32",
+      "vle64",
+      "vse8",
+      "vse16",
+      "vse32",
+      "vse64",
+      "unit stride",
+      "mask"
+    ],
+    "vector strided": [
+      "vlse8",
+      "vlse16",
+      "vlse32",
+      "vlse64",
+      "vsse8",
+      "vsse16",
+      "vsse32",
+      "vsse64",
+      "strided",
+      "negative stride",
+      "zero stride"
+    ],
+    "vector fault-only-first": [
+      "vle8ff",
+      "vle16ff",
+      "fault-only-first",
+      "first fault",
+      "vl shorten",
+      "partial"
+    ],
+    "vector whole/mask": [
+      "vl1re",
+      "vl2re",
+      "vl4re",
+      "vl8re",
+      "vs1r",
+      "vs2r",
+      "vs4r",
+      "vs8r",
+      "vlm",
+      "vsm",
+      "whole register",
+      "mask load",
+      "mask store"
+    ],
+    "vector indexed": [
+      "vluxei",
+      "vloxei",
+      "vsuxei",
+      "vsoxei",
+      "indexed",
+      "ordered",
+      "unordered",
+      "duplicate index",
+      "index EEW"
+    ],
+    "AMO/AMOCAS": [
+      "amoadd",
+      "amoswap",
+      "amoor",
+      "amoand",
+      "amoxor",
+      "amomax",
+      "amomin",
+      "amomaxu",
+      "amominu",
+      "amocas",
+      "compare and swap",
+      "aq",
+      "rl"
+    ],
+    "AMOCAS": [
+      "amocas",
+      "compare and swap",
+      "CAS",
+      "equal",
+      "not equal",
+      "Zacas"
+    ],
+    "LR/SC": [
+      "lr.w",
+      "lr.d",
+      "sc.w",
+      "sc.d",
+      "reservation",
+      "store conditional",
+      "reservation lost"
+    ],
+    "CBO/CMO": [
+      "cbo.clean",
+      "cbo.flush",
+      "cbo.inval",
+      "cbo.zero",
+      "CMO",
+      "envcfg",
+      "block size"
+    ],
+    "fence/sfence": [
+      "fence",
+      "fence.i",
+      "sfence.vma",
+      "TLB flush",
+      "instruction cache",
+      "memory ordering"
+    ],
+    "trigger timing-after": [
+      "trigger",
+      "timing after",
+      "mcontrol",
+      "load trigger",
+      "store trigger",
+      "debug action"
+    ],
+    "PMP partial": [
+      "PMP",
+      "TOR",
+      "NAPOT",
+      "partial",
+      "homogeneous",
+      "access fault"
+    ],
+    "PMA/PBMT/MMIO": [
+      "PMA",
+      "PBMT",
+      "MMIO",
+      "IO",
+      "non-idempotent",
+      "access fault",
+      "device"
+    ],
+    "TLB/PTE cache": [
+      "sfence.vma",
+      "satp",
+      "PTE",
+      "A/D",
+      "stale",
+      "TLB"
+    ],
+    "exception priority": [
+      "exception priority",
+      "load page fault",
+      "store page fault",
+      "access fault",
+      "address misaligned",
+      "mtval",
+      "stval"
+    ],
+    "memtracer/log": [
+      "memtracer",
+      "trace",
+      "commit log",
+      "log_mem",
+      "special run"
+    ]
+  },
+  "handoff_defaults": {
+    "suggested_test_point_area": "test_point/memblock",
+    "suggested_case_area": "ai_test_cases or manual_test_cases/memblock after hyptest-workflow profile decision",
+    "default_gate_note": "needs profile decision",
+    "implementation_owner": "hyptest-workflow"
+  }
+}
