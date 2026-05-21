@@ -224,84 +224,42 @@ testpoint_plan.md   agent 最终测试点分析报告
 
 ### 人怎么看这些输出
 
-把输出分成两层看：
+先分清两类目录：
 
 ```text
-cov_doc/reports/<target>/<run_tag>/   人读报告，优先看这里
-cov_runs/<target>/<run_tag>/          JSON、run.log、before/after gcov 等原始证据
+cov_doc/reports/<target>/<run_tag>/   人看的报告，优先看
+cov_runs/<target>/<run_tag>/          原始证据，追溯时看
 ```
 
-各报告的用途：
+主入口只有四个：
 
-| 文件 | 给人看的含义 | 什么时候重点看 |
+| 你想知道 | 看哪个文件 | 这个文件回答什么 |
 |---|---|---|
-| `summary.md` | 覆盖率大盘和优先级排序：哪些维度低、哪些入口 0%、哪些 branch/call 低、哪些 target entry 在快照里缺失。 | 想快速知道“现在最缺哪里”时先看。 |
-| `line.md` | Spike 共享源码行级证据：`mmu.cc/mmu.h/v_ext_macros.h/triggers.cc/...` 里哪些函数、源码行、branch、call 没覆盖。 | 想把覆盖率数字翻译成架构场景时看。 |
-| `entry_line.md` | 具体指令入口 `.gcov` 精查证据，比如 `amoadd_b.h.gcov`、`c_lbu.h.gcov`、`vl1re16_v.h.gcov`。 | 想确认某个指令入口有没有精确行级证据时看。 |
-| `handoff.md` | 给 `hyptest-workflow` 的候选测试点交接骨架，包含 evidence、profile/gate、duplicate search terms、需要 source confirmation 的字段。 | 准备让 agent 写 case 前看。 |
-| `testpoint_plan.md` | agent 综合 `summary/line/entry/handoff/json` 后写的最终人工分析：当前情况、推荐补哪些测试场景、observable、gate note、下一步。 | 想知道“我现在该补哪些测试点”时最优先看。 |
-| `compare.md` | 单 case 前后 `.gcov` counter delta 证据，说明某个 case 是否让必需 line/branch/call 增加。 | 要确认某个 case 是否真的补到某条路径时看。 |
-| `path_markers.md` | path marker 序列证据，说明同一条动态访问/指令的 marker 序列是否出现。 | gcov 无法证明 same-flow，需要路径插桩时看。 |
+| 看总体覆盖率展示 | `summary.md` | 哪些维度低、哪些入口 0%、line/branch/call 覆盖率和优先级排名。 |
+| 看具体源码哪里没覆盖 | `line.md` | `mmu.cc/mmu.h/v_ext_macros.h/...` 里哪些函数、源码行、branch、call 没跑到。 |
+| 看具体指令入口有没有跑到 | `entry_line.md` | `riscv/insns/*.h.gcov` 的入口级行/分支/call 证据。 |
+| 看最后该补哪些测试点 | `testpoint_plan.md` | agent 综合证据后的测试场景、observable、gate 建议和下一步。 |
 
-使用原则：
+其他文件按需看：
 
-- `summary.md` 负责回答“哪里低”；`line.md` 负责回答“共享源码哪里没跑”；`entry_line.md` 负责回答“具体入口有没有精确行级证据”；`testpoint_plan.md` 负责回答“建议补哪些高质量测试点”。
-- `handoff.md` 是交接包，不是最终结论。里面的 `needs source confirmation`、`needs profile decision` 是正常的，表示写 case 前还要用 `hyptest-workflow` 查重和做 profile/gate 判断。
-- `*.json` 是给脚本和 agent 后续继续分析用的结构化数据，不是主要人工阅读入口。
-- 如果只看 aggregate coverage，不能声称一条完整动态执行流跑过；要证明 same-flow，需要 `compare.md` 的单 case 增量证据，或 `path_markers.md` 的 marker 关联证据。
+- `handoff.md`: 给 `hyptest-workflow` 写 case 的交接包，不是最终结论。
+- `compare.md`: 单 case 前后 `.gcov` 增量证据，用来确认某个 case 是否补到目标计数。
+- `path_markers.md`: path marker 序列证据，用来确认 gcov 不能证明的 same-flow。
+- `*.json`: 给脚本和 agent 继续处理的结构化数据，不是主要人工阅读入口。
 
-推荐阅读顺序：
+一句话原则：`summary.md`、`line.md`、`entry_line.md` 是证据，`testpoint_plan.md`
+是结论和行动计划。aggregate coverage 只能说明边/计数分别覆盖过，不能证明同一条动态执行流；
+要证明 same-flow，看 `compare.md` 或 `path_markers.md`。
 
-```text
-快速了解现状：
-  1. testpoint_plan.md
-  2. summary.md
-  3. line.md
+逐 case 跑完后，优先看 `case_matrix*/summary.md` 总览；单个 case 再看
+`cases/<idx>_<case>/compare.md` 和 `run.log`。
 
-准备写测试点：
-  1. testpoint_plan.md
-  2. handoff.md
-  3. line.md
-  4. entry_line.md
-  5. summary.json / line.json
+一次好的最终分析只检查四件事：
 
-确认某个 case 是否补到覆盖：
-  1. case_matrix*/summary.md
-  2. cases/<idx>_<case>/compare.md
-  3. cases/<idx>_<case>/run.log
-  4. cases/<idx>_<case>/before_gcov 和 after_gcov
-```
-
-如果执行逐 case 矩阵，`cov_runs/<target>/<run_tag>/case_matrix_*` 下面会多出：
-
-```text
-summary.md / summary.json
-cases/<idx>_<case>/run.log
-cases/<idx>_<case>/compare.md
-cases/<idx>_<case>/compare.json
-cases/<idx>_<case>/before_gcov/
-cases/<idx>_<case>/after_gcov/
-```
-
-其中 `case_matrix*/summary.md` 看所有 case 的总览，单个 case 的 `compare.md` 看具体 counter movement，`run.log` 看 Spike 执行证据，`before_gcov/after_gcov` 用来追溯原始快照。
-
-一次好的分析应该至少包含：
-
-- 覆盖率输入：target、summary、gcov 目录。
-- 高优先级缺口：按维度排序，带 line/branch/call/0% entry 证据，包含 low-line/low-branch/low-call entry。
-- target entry 完整性：`missing_entries_by_dimension` 用来区分“目标里写了但本次 gcov snapshot 没出现”和“出现了但 0%”。
-- 行级证据：具体 `.gcov` 文件、源码行、函数、miss kind。
-- 行级证据状态：`line_evidence_status`，特别注意 `exact-instruction-entry-evidence`、`weak-inspection-hint-only`、`no-line-evidence-from-requested-files`、`unreviewed-missing-files`。
-- 证据类型：`entry`、`shared-path` 或 `mixed`；`mixed` 需要继续看共享源码，避免把指令入口覆盖当成共享语义路径覆盖。
-- 同一执行流证据：`same_flow_evidence`。`aggregate-only` 只能说明套件里分别覆盖过边，不能说明一条指令/一次访问跑过完整路径。
-- 单 case 矩阵证据用途：`evidence_use`。`no-execution-evidence` 不能当覆盖率证据；`diagnostic-only-nonpass-counter-movement` 只能辅助定位；`pass-counter-evidence-needs-source-pc-review` 仍需源码/PC/must-pass 复核；`pass-counter-evidence-scope-review-required` 先做 target scope 判断。
-- 路径置信度：`confirmed-not-executed`、`counter-increment-observed`、`single-case-increment-confirmed`、`edge-covered-path-unknown`、`needs-path-instrumentation` 或 `out-of-scope`。
-- 路径签名：从 Spike 源码和 `.gcov` 证据反推的目标入口、共享函数路径、must-pass 证据点、源码证明的条件、observable、剩余不确定性。
-- 测试点候选：missing scenario、test idea、observable、gate note。
-- profile/gate 判断：`extension_required`、`current_profile_evidence`、`default_gate_eligible`、`profile_gate_note`。
-- 维度 gate 判断：`dimension_gate`，manual-only 或 `default_gate_allowed=false` 的维度只能作为 manual/special-run，除非先改 target/profile 决策。
-- 查重提示：应该在 hyptest 里搜哪些关键词。
-- handoff packet：后续交给 `hyptest-workflow` 写 case。
+- `结论`: 现在最缺哪里，优先补什么。
+- `数据`: target、输入、case 数、line/branch/call/0% entry 等关键数字。
+- `证据`: `.gcov`、源码函数/行、branch/call、case log 或 compare/path marker。
+- `限制与下一步`: 哪些只是 aggregate evidence，哪些需要单 case 增量、path marker 或 `hyptest-workflow` 查重落 case。
 
 ## 高级：手动跑脚本
 
