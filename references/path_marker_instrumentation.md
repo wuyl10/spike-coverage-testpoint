@@ -9,11 +9,15 @@ are not enough.
 Emit one correlated path-marker record per guest instruction or memory access:
 
 ```json
-{"pc":"0x80001000","insn":"lw","markers":["mem.access.scalar_load","mem.translate.tlb_miss_walk","mem.fault.page"]}
+{"hart":0,"seq":42,"pc":"0x80001000","insn":"lw","access_id":"42.0","markers":["mem.access.scalar_load","mem.translate.tlb_miss_walk","mem.fault.page"]}
 ```
 
 This preserves same-flow correlation. A plain counter saying each marker
 appeared somewhere is weaker and should be treated like edge evidence.
+
+Strong JSON records must identify a dynamic instruction/access with `pc` plus
+`insn`, `seq`, or `access_id`. JSON records without those correlation fields
+are still parsed, but should be treated as weak evidence.
 
 ## Requirements
 
@@ -139,6 +143,8 @@ python3 scripts/analyze_path_markers.py \
      `marker-sequence-observed`. This is marker evidence; the agent still must
      validate marker placement and the architectural observable before choosing
      final path confidence.
+   - Required marker sequence appears in JSON without pc+insn, seq, or access_id:
+     `json-marker-sequence-observed-weak`; treat it as weak evidence.
    - Required marker sequence appears only through text fallback:
      `text-marker-sequence-observed-weak`; treat it as weak evidence unless the
      log format is independently proven to be one dynamic instruction/access per

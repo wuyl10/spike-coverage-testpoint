@@ -80,13 +80,14 @@ Use these rules whenever the user cares about execution paths, combinations, or 
   - isolated one-case evidence, not a suite run or a loop-heavy case;
   - target guest PC/instruction evidence from Spike log, commit log, or an equivalent run artifact;
   - all must-pass counters increase;
-  - no required `decreased-or-reset`, `missing-after-event`, unresolved `missing-before-event`, `missing-before-file`, or `missing-after-file`.
+  - branch/call snapshots use numeric count format, not percentage-only format;
+  - no required `decreased-or-reset`, `missing-after-event`, `not-comparable-counter-format`, unresolved `missing-before-event`, `missing-before-file`, or `missing-after-file`.
   If any item is missing, downgrade to `counter-increment-observed` or `edge-covered-path-unknown`.
 - For path-sensitive work, build a **path signature from source/gcov evidence** before proposing a case. Use `path_analysis.path_signature_fields` only as a reporting checklist; do not treat it as a complete architecture matrix.
 - Apply `path_analysis.evidence_policy` and `path_analysis.path_markers` from the selected target when present. Do not invent path combinations from target JSON; derive them from Spike source, `.gcov`, single-case deltas, or path-marker records.
 - Prefer tiny single-purpose cases for increment confirmation. If one case contains loops or many similar memory instructions, mark confidence lower because counter deltas may come from different dynamic instructions.
 - Path-marker instrumentation is for coverage Spike only. Keep it gated by a build flag, runtime option, or environment variable, and do not require it for normal Spike or default hyptest gates.
-- Treat `marker-sequence-observed` from JSONL path markers as marker evidence, not as final architecture proof by itself. Validate marker placement, per-instruction/access correlation, and expected observable before upgrading path confidence. Treat `text-marker-sequence-observed-weak` as weak evidence only.
+- Treat `marker-sequence-observed` from JSONL path markers as marker evidence, not as final architecture proof by itself. Strong marker records need pc+insn, seq, or access_id correlation fields. Validate marker placement, per-instruction/access correlation, and expected observable before upgrading path confidence. Treat `json-marker-sequence-observed-weak` and `text-marker-sequence-observed-weak` as weak evidence only.
 
 ## Script And Agent Boundary
 
@@ -107,10 +108,11 @@ Do not let script output become the final answer by itself. Script output is evi
 - Respect the selected target exactly. If an uncovered path matches `scope_out`, mark it out of scope instead of proposing a test. If the target does not say whether a path is in scope, mark it `needs target decision`.
 - Do not edit `~/.bashrc`. If rerunning hyptest with a coverage Spike, use temporary environment variables in the command/process only.
 - When a proposed point requires special Spike runtime options, label it `manual/special-run` instead of pretending it is a normal default gate.
+- If the target has `special_run_scope`, `manual_only_dimensions`, or `dimension_metadata`, apply those before suggesting a default gate.
 - Separate **entry coverage** from **semantic coverage**:
   - `insns/*.h` line coverage only proves the instruction entry executed.
   - Shared-path branch/call coverage proves whether the interesting MMU/vector/atomic/trigger/fault logic executed.
-  - `analyze_spike_gcov.py` labels candidates as `entry`, `shared-path`, or `mixed`; use that label to avoid ranking one-line instruction smoke gaps above reusable semantic path gaps.
+  - `analyze_spike_gcov.py` labels candidates as `entry`, `shared-path`, or `mixed` and prints a class reason. Use that label as triage only; final semantic value still requires source/gcov review.
 - Separate **edge coverage** from **path coverage**:
   - Aggregate branch coverage does not prove a branch sequence happened in the same dynamic instruction/access.
   - Single-case counter deltas plus Spike logs can strongly confirm a tiny case's required path points.
@@ -162,7 +164,7 @@ If the user provides different paths, use those.
 4. **Rank coverage evidence**
    - First pass: use `scripts/analyze_spike_gcov.py --target <target.json> --top <N> --markdown`.
    - Treat the score as a triage hint only. It is based on 0% entries and low line/branch/call coverage; it is not a semantic test quality score.
-   - Read `evidence_class`. Prefer `shared-path` when the user's goal is semantic/path coverage. Treat `mixed` as "entry evidence that needs shared source review"; treat `entry` as profile-gated entry evidence until source review shows value.
+   - Read `evidence_class`, `evidence_class_reason`, and `classification_confidence`. Prefer `shared-path` when the user's goal is semantic/path coverage. Treat `mixed` as "entry evidence that needs shared source review"; treat `entry` as profile-gated entry evidence until source review shows value.
    - Do not turn this ranking directly into test points without source/gcov inspection and agent reasoning.
    - If a high-ranked gap is only an instruction entry, inspect shared paths or mark it as `entry-only evidence`.
 
@@ -186,7 +188,7 @@ If the user provides different paths, use those.
      - remaining uncertainty
    - If any must-pass event is zero in the suite `.gcov`, mark `confirmed-not-executed`.
    - If all events have aggregate coverage but no same-flow proof, mark `edge-covered-path-unknown`.
-   - To confirm a specific tiny case, take before/after `.gcov` snapshots and run `compare_gcov_snapshots.py`; use Spike `-l --log-commits --log=<file>` when useful. If the compare output has `decreased-or-reset`, missing files, or missing required events, do not use it for positive path confirmation.
+  - To confirm a specific tiny case, take before/after `.gcov` snapshots with numeric branch/call counts, then run `compare_gcov_snapshots.py`; use Spike `-l --log-commits --log=<file>` when useful. Use default `--key-mode stable-line` unless you intentionally want function-aware matching. If the compare output has `decreased-or-reset`, `not-comparable-counter-format`, missing files, possible key drift, or missing required events, do not use it for positive path confirmation.
    - If the path depends on internal correlation that gcov cannot tie together, propose target-defined path markers and mark `needs-path-instrumentation`.
 
 7. **Check existing hyptest coverage**
@@ -198,11 +200,12 @@ If the user provides different paths, use those.
 8. **Output an actionable plan**
    - Give evidence first: target, file/coverage/line/branch/call and exact gap.
    - Include path confidence and explain whether the evidence is an entry, edge, single-case increment, or marker-sequence proof.
+   - Include `line_evidence_status` and do not finalize candidates marked `weak-inspection-hint-only`, `no-line-evidence-from-requested-files`, or `unreviewed-missing-files` without more source/gcov review.
    - Include profile/gate fields before recommending default-gate cases: `extension_required`, `current_profile_evidence`, `default_gate_eligible`, and `profile_gate_note`.
    - Then give proposed test point: setup, action, expected observation, and likely hyptest location.
    - Mark `default`, `manual/special-run`, `blocked`, `out-of-scope`, or `needs profile decision` when obvious.
    - Use `build_handoff_packet.py` when summary/line JSON is available, then replace any unresolved skeleton fields with agent reasoning or `needs source confirmation: <reason>`.
-   - Always include a compact `hyptest-workflow handoff packet` for recommended candidates. It is a handoff artifact, not permission to write cases.
+   - Include a compact `hyptest-workflow handoff packet` when the user asks what to implement next, asks for handoff, or plans to write cases. For method/risk/explanation-only questions, a full handoff packet is optional.
 
 ## Bundled Tools
 
@@ -295,7 +298,9 @@ Interpretation:
 - `newly-covered` or `increased` on all must-pass points supports `counter-increment-observed` first.
 - Upgrade to `single-case-increment-confirmed` only if the run is tiny/single-purpose, target PC/instruction evidence exists, and no required event/file is missing or decreased.
 - `still-zero` on any must-pass point means `confirmed-not-executed`.
-- `decreased-or-reset`, `missing-after-event`, unresolved `missing-before-event`, `missing-before-file`, or `missing-after-file` are invalid for positive path confirmation until explained.
+- `not-comparable-counter-format` means a branch/call event was only available as a percentage/unknown format. Regenerate snapshots with numeric counts such as `gcov -b -c` before using it for increment proof.
+- `decreased-or-reset`, `missing-after-event`, `not-comparable-counter-format`, unresolved `missing-before-event`, `missing-before-file`, or `missing-after-file` are invalid for positive path confirmation until explained.
+- `possible_key_drift` means before/after matching may be unstable; inspect the affected source line/function before deciding.
 - Aggregate counters without a controlled single-case run mean `edge-covered-path-unknown`.
 
 When the user asks how to run or interpret a single-case increment check, read
@@ -319,7 +324,7 @@ Preferred marker log format:
 {"pc":"0x80001000","insn":"lw","markers":["mem.access.scalar_load","mem.translate.tlb_miss_walk","mem.fault.page"]}
 ```
 
-Only JSON marker records that preserve per-instruction/access correlation can support same-flow path evidence. Plain text fallback is weaker and should be treated as edge evidence unless independently proven to be one dynamic instruction/access record. The script status `marker-sequence-observed` means the marker sequence appeared; the agent still must validate marker placement and observable behavior.
+Only JSON marker records that preserve per-instruction/access correlation can support same-flow path evidence. Strong records should include pc+insn, seq, or access_id. JSON records without correlation fields and plain text fallback are weaker and should be treated as edge evidence unless independently proven to be one dynamic instruction/access record. The script status `marker-sequence-observed` means the marker sequence appeared; the agent still must validate marker placement and observable behavior.
 
 When the user asks to design or review path-marker instrumentation, read
 `references/path_marker_instrumentation.md`. Keep target-specific marker names
@@ -363,8 +368,12 @@ selected_candidates:
   - candidate_name:
     coverage_dimension:
     coverage_evidence:
+    line_evidence_status:
     source_or_gcov_evidence:
+    do_not_finalize_without:
     evidence_class: entry | shared-path | mixed
+    evidence_class_reason:
+    classification_confidence:
     path_confidence: confirmed-not-executed | counter-increment-observed | single-case-increment-confirmed | edge-covered-path-unknown | needs-path-instrumentation | out-of-scope
     path_signature:
       target_instruction_or_entry:
@@ -384,6 +393,9 @@ selected_candidates:
     expected_observable:
     profile_gate:
       extension_required:
+      extension_required_inferred:
+      inference_basis:
+      needs_agent_profile_confirmation:
       current_profile_evidence:
       default_gate_eligible:
       profile_gate_note:

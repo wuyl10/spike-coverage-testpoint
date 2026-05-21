@@ -33,12 +33,11 @@ CALL_RE = re.compile(r"^\s*call\s+(?P<num>\d+)\s+(?P<rest>.*)$")
 @dataclass(frozen=True)
 class EventKey:
     file: str
-    function: str | None
-    mangled_name: str | None
     kind: str
     source_line: int | None
     ordinal: int | None
     source_code: str
+    function_discriminator: str | None = None
 
 
 @dataclass
@@ -51,6 +50,7 @@ class Event:
     ordinal: int | None
     source_code: str
     count: int | None
+    counter_format: str
     raw: str
 
 
@@ -65,6 +65,8 @@ class EventDelta:
     source_code: str
     before: int | None
     after: int | None
+    before_counter_format: str | None
+    after_counter_format: str | None
     delta: int | None
     status: str
 
@@ -103,10 +105,20 @@ def parse_count_token(token: str) -> int | None:
 def parse_branch_or_call_count(rest: str) -> int | None:
     if "never executed" in rest:
         return 0
-    match = re.search(r"\b(?:taken|returned)\s+(\d+)\b", rest)
+    match = re.search(r"\b(?:taken|returned)\s+(\d+)(?=$|\s)", rest)
     if match:
         return int(match.group(1))
     return None
+
+
+def parse_branch_or_call_counter_format(rest: str) -> str:
+    if "never executed" in rest:
+        return "never"
+    if re.search(r"\b(?:taken|returned)\s+\d+(?:\.\d+)?%", rest):
+        return "percent"
+    if re.search(r"\b(?:taken|returned)\s+\d+(?=$|\s)", rest):
+        return "count"
+    return "unknown"
 
 
 def load_target_excludes(path: Path | None) -> list[re.Pattern[str]]:
@@ -135,7 +147,21 @@ def excluded(event: Event, patterns: list[re.Pattern[str]]) -> bool:
     return any(pattern.search(haystack) for pattern in patterns)
 
 
-def parse_gcov(path: Path, display_name: str, patterns: list[re.Pattern[str]]) -> dict[EventKey, Event]:
+def make_key(event: Event, key_mode: str) -> EventKey:
+    function_discriminator = None
+    if key_mode == "function-aware":
+        function_discriminator = f"{event.function or ''}\0{event.mangled_name or ''}"
+    return EventKey(
+        file=event.file,
+        kind=event.kind,
+        source_line=event.source_line,
+        ordinal=event.ordinal,
+        source_code=event.source_code,
+        function_discriminator=function_discriminator,
+    )
+
+
+def parse_gcov(path: Path, display_name: str, patterns: list[re.Pattern[str]], key_mode: str) -> dict[EventKey, Event]:
     events: dict[EventKey, Event] = {}
     if not path.exists():
         return events
@@ -167,20 +193,11 @@ def parse_gcov(path: Path, display_name: str, patterns: list[re.Pattern[str]]) -
                     ordinal=None,
                     source_code=last_source_code,
                     count=count,
+                    counter_format="count",
                     raw=line.strip(),
                 )
                 if not excluded(event, patterns):
-                    events[
-                        EventKey(
-                            file=display_name,
-                            function=event.function,
-                            mangled_name=event.mangled_name,
-                            kind=event.kind,
-                            source_line=event.source_line,
-                            ordinal=event.ordinal,
-                            source_code=event.source_code,
-                        )
-                    ] = event
+                    events[make_key(event, key_mode)] = event
             continue
 
         branch_match = BRANCH_RE.match(line)
@@ -194,19 +211,12 @@ def parse_gcov(path: Path, display_name: str, patterns: list[re.Pattern[str]]) -
                 ordinal=int(branch_match.group("num")),
                 source_code=last_source_code,
                 count=parse_branch_or_call_count(branch_match.group("rest")),
+                counter_format=parse_branch_or_call_counter_format(branch_match.group("rest")),
                 raw=line.strip(),
             )
             if not excluded(event, patterns):
                 events[
-                    EventKey(
-                        file=display_name,
-                        function=event.function,
-                        mangled_name=event.mangled_name,
-                        kind=event.kind,
-                        source_line=event.source_line,
-                        ordinal=event.ordinal,
-                        source_code=event.source_code,
-                    )
+                    make_key(event, key_mode)
                 ] = event
             continue
 
@@ -221,19 +231,12 @@ def parse_gcov(path: Path, display_name: str, patterns: list[re.Pattern[str]]) -
                 ordinal=int(call_match.group("num")),
                 source_code=last_source_code,
                 count=parse_branch_or_call_count(call_match.group("rest")),
+                counter_format=parse_branch_or_call_counter_format(call_match.group("rest")),
                 raw=line.strip(),
             )
             if not excluded(event, patterns):
                 events[
-                    EventKey(
-                        file=display_name,
-                        function=event.function,
-                        mangled_name=event.mangled_name,
-                        kind=event.kind,
-                        source_line=event.source_line,
-                        ordinal=event.ordinal,
-                        source_code=event.source_code,
-                    )
+                    make_key(event, key_mode)
                 ] = event
             continue
 
@@ -258,9 +261,16 @@ def event_matches_focus(event: EventDelta, focus_terms: list[str]) -> bool:
             str(event.source_line or ""),
             str(event.ordinal or ""),
             event.source_code,
+            event.function or "",
+            event.before_counter_format or "",
+            event.after_counter_format or "",
         ]
     ).lower()
     return any(term.lower() in haystack for term in focus_terms)
+
+
+def counter_format_comparable(counter_format: str | None) -> bool:
+    return counter_format in {"count", "never", "synthetic-zero"}
 
 
 def compare_events(
@@ -278,14 +288,16 @@ def compare_events(
             deltas.append(
                 EventDelta(
                     file=key.file,
-                    function=key.function,
-                    mangled_name=key.mangled_name,
+                    function=before_event.function if before_event else None,
+                    mangled_name=before_event.mangled_name if before_event else None,
                     kind=key.kind,
                     source_line=key.source_line,
                     ordinal=key.ordinal,
                     source_code=key.source_code,
                     before=before_count,
                     after=None,
+                    before_counter_format=before_event.counter_format if before_event else None,
+                    after_counter_format=None,
                     delta=None,
                     status="missing-after-event",
                 )
@@ -293,7 +305,11 @@ def compare_events(
             continue
 
         before_count = before_event.count if before_event else (0 if missing_before_zero else None)
+        before_counter_format = (
+            before_event.counter_format if before_event else ("synthetic-zero" if missing_before_zero else None)
+        )
         after_count = after_event.count
+        after_counter_format = after_event.counter_format
         delta: int | None = None
         status = "missing-before-event" if before_event is None else "unknown"
 
@@ -309,20 +325,27 @@ def compare_events(
                 status = "still-zero"
             else:
                 status = "unchanged-covered"
-        elif before_event is not None and after_count == 0:
-            status = "still-zero"
+        elif before_event is not None and after_event is not None:
+            if not counter_format_comparable(before_counter_format) or not counter_format_comparable(after_counter_format):
+                status = "not-comparable-counter-format"
+            elif after_count == 0:
+                status = "still-zero"
+        elif after_event is not None and not counter_format_comparable(after_counter_format):
+            status = "not-comparable-counter-format"
 
         deltas.append(
             EventDelta(
                 file=key.file,
-                function=key.function,
-                mangled_name=key.mangled_name,
+                function=after_event.function or (before_event.function if before_event else None),
+                mangled_name=after_event.mangled_name or (before_event.mangled_name if before_event else None),
                 kind=key.kind,
                 source_line=key.source_line,
                 ordinal=key.ordinal,
                 source_code=key.source_code,
                 before=before_count,
                 after=after_count,
+                before_counter_format=before_counter_format,
+                after_counter_format=after_counter_format,
                 delta=delta,
                 status=status,
             )
@@ -337,9 +360,10 @@ def rank_delta(delta: EventDelta) -> tuple[int, str, int, int]:
         "decreased-or-reset": 2,
         "missing-after-event": 3,
         "missing-before-event": 4,
-        "still-zero": 5,
-        "unchanged-covered": 6,
-        "unknown": 7,
+        "not-comparable-counter-format": 5,
+        "still-zero": 6,
+        "unchanged-covered": 7,
+        "unknown": 8,
     }.get(delta.status, 5)
     kind_rank = {"branch": 0, "call": 1, "line": 2}.get(delta.kind, 3)
     return (status_rank, delta.file, delta.source_line or -1, kind_rank)
@@ -352,10 +376,13 @@ def summarize(
 ) -> dict[str, Any]:
     counts: dict[str, int] = {}
     by_kind: dict[str, dict[str, int]] = {}
+    counter_formats: dict[str, int] = {}
     for delta in deltas:
         counts[delta.status] = counts.get(delta.status, 0) + 1
         by_kind.setdefault(delta.kind, {})
         by_kind[delta.kind][delta.status] = by_kind[delta.kind].get(delta.status, 0) + 1
+        format_pair = f"{delta.before_counter_format or '-'}->{delta.after_counter_format or '-'}"
+        counter_formats[format_pair] = counter_formats.get(format_pair, 0) + 1
     file_status_counts = {
         "missing-before-file": len(missing_before_files or []),
         "missing-after-file": len(missing_after_files or []),
@@ -363,8 +390,30 @@ def summarize(
     return {
         "status_counts": counts,
         "kind_status_counts": by_kind,
+        "counter_format_counts": counter_formats,
         "file_status_counts": file_status_counts,
+        "possible_key_drift": detect_possible_key_drift(deltas),
     }
+
+
+def detect_possible_key_drift(deltas: list[EventDelta]) -> list[dict[str, Any]]:
+    missing_after = [delta for delta in deltas if delta.status == "missing-after-event"]
+    missing_before = [delta for delta in deltas if delta.status == "missing-before-event"]
+    before_keys = {(d.file, d.kind, d.source_line, d.ordinal) for d in missing_before}
+    findings: list[dict[str, Any]] = []
+    for delta in missing_after:
+        key = (delta.file, delta.kind, delta.source_line, delta.ordinal)
+        if key in before_keys:
+            findings.append(
+                {
+                    "file": delta.file,
+                    "kind": delta.kind,
+                    "source_line": delta.source_line,
+                    "ordinal": delta.ordinal,
+                    "note": "matching missing-before/missing-after at same file/kind/line/ordinal; source/function key may have drifted",
+                }
+            )
+    return findings[:20]
 
 
 def print_markdown(result: dict[str, Any], limit: int) -> None:
@@ -374,12 +423,17 @@ def print_markdown(result: dict[str, Any], limit: int) -> None:
     print(f"- after_dir: `{result['after_dir']}`")
     if result.get("target"):
         print(f"- target: `{result['target']}`")
+    print(f"- key_mode: `{result['key_mode']}`")
     if result.get("missing_before_files"):
         print("- missing before files: `" + "`, `".join(result["missing_before_files"]) + "`")
     if result.get("missing_after_files"):
         print("- missing after files: `" + "`, `".join(result["missing_after_files"]) + "`")
     print("- meaning: this is counter-delta evidence, not full path coverage by itself")
-    print("- invalid for path confirmation: `decreased-or-reset`, `missing-after-event`, and unresolved missing files/events")
+    print("- counter format: branch/call increment proof needs numeric counts, e.g. gcov generated with `-b -c`")
+    print(
+        "- invalid for path confirmation: `decreased-or-reset`, `missing-after-event`, "
+        "`not-comparable-counter-format`, and unresolved missing files/events"
+    )
     print()
 
     print("## Summary")
@@ -389,7 +443,26 @@ def print_markdown(result: dict[str, Any], limit: int) -> None:
     for status, count in sorted(result["summary"].get("file_status_counts", {}).items()):
         if count:
             print(f"- {status}: {count}")
+    if result["summary"].get("counter_format_counts"):
+        format_bits = [
+            f"{name}={count}" for name, count in sorted(result["summary"]["counter_format_counts"].items())
+        ]
+        print(f"- counter formats: {', '.join(format_bits)}")
     print()
+    if result["summary"].get("possible_key_drift"):
+        print("## Possible key drift")
+        print()
+        for item in result["summary"]["possible_key_drift"][:limit]:
+            print(
+                "- {file} {kind} line={line} ordinal={ordinal}: {note}".format(
+                    file=item["file"],
+                    kind=item["kind"],
+                    line=item["source_line"],
+                    ordinal=item["ordinal"],
+                    note=item["note"],
+                )
+            )
+        print()
 
     for title, statuses in (
         ("Newly covered", {"newly-covered"}),
@@ -397,6 +470,7 @@ def print_markdown(result: dict[str, Any], limit: int) -> None:
         ("Decreased or reset", {"decreased-or-reset"}),
         ("Missing after", {"missing-after-event"}),
         ("Missing before", {"missing-before-event"}),
+        ("Not comparable counter format", {"not-comparable-counter-format"}),
         ("Still zero", {"still-zero"}),
     ):
         rows = [item for item in result["deltas"] if item["status"] in statuses]
@@ -406,12 +480,12 @@ def print_markdown(result: dict[str, Any], limit: int) -> None:
             print("- none")
             print()
             continue
-        print("| File | Function | Kind | Line | Ordinal | Before | After | Delta | Source |")
-        print("|---|---|---|---:|---:|---:|---:|---:|---|")
+        print("| File | Function | Kind | Line | Ordinal | Before | After | Formats | Delta | Source |")
+        print("|---|---|---|---:|---:|---:|---:|---|---:|---|")
         for item in rows[:limit]:
             source = str(item["source_code"]).replace("|", "\\|")
             print(
-                "| {file} | `{function}` | {kind} | {line} | {ordinal} | {before} | {after} | {delta} | `{source}` |".format(
+                "| {file} | `{function}` | {kind} | {line} | {ordinal} | {before} | {after} | {formats} | {delta} | `{source}` |".format(
                     file=item["file"],
                     function=(item.get("function") or "-").replace("|", "\\|"),
                     kind=item["kind"],
@@ -419,6 +493,7 @@ def print_markdown(result: dict[str, Any], limit: int) -> None:
                     ordinal=item["ordinal"] if item["ordinal"] is not None else "-",
                     before=item["before"] if item["before"] is not None else "-",
                     after=item["after"] if item["after"] is not None else "-",
+                    formats=f"{item.get('before_counter_format') or '-'}->{item.get('after_counter_format') or '-'}",
                     delta=item["delta"] if item["delta"] is not None else "-",
                     source=source,
                 )
@@ -435,6 +510,12 @@ def main() -> int:
     parser.add_argument("--file", action="append", default=[], help=".gcov file name to compare; can be repeated")
     parser.add_argument("--target", type=Path, help="target JSON; uses line_exclude_regex for filtering")
     parser.add_argument("--focus", action="append", default=[], help="substring filter on file/source/kind; can be repeated")
+    parser.add_argument(
+        "--key-mode",
+        choices=("stable-line", "function-aware"),
+        default="stable-line",
+        help="event matching key; stable-line ignores function name drift, function-aware includes function metadata",
+    )
     parser.add_argument(
         "--missing-before-zero",
         action="store_true",
@@ -459,8 +540,8 @@ def main() -> int:
             missing_before.append(name)
         if not after_path.exists():
             missing_after.append(name)
-        before_events.update(parse_gcov(before_path, name, patterns))
-        after_events.update(parse_gcov(after_path, name, patterns))
+        before_events.update(parse_gcov(before_path, name, patterns, args.key_mode))
+        after_events.update(parse_gcov(after_path, name, patterns, args.key_mode))
 
     deltas = compare_events(before_events, after_events, args.missing_before_zero)
     deltas = [delta for delta in deltas if event_matches_focus(delta, args.focus)]
@@ -470,6 +551,7 @@ def main() -> int:
         "before_dir": str(args.before_dir),
         "after_dir": str(args.after_dir),
         "target": str(args.target) if args.target else None,
+        "key_mode": args.key_mode,
         "files": files,
         "missing_before_files": missing_before,
         "missing_after_files": missing_after,
@@ -479,7 +561,9 @@ def main() -> int:
             "newly-covered/increased confirms counter movement for a required edge/call/line in this "
             "isolated run. If all required points move in a tiny single-purpose case, confidence is high; "
             "otherwise mark edge-covered-path-unknown or use path markers. decreased-or-reset and missing "
-            "events/files are invalid for positive path confirmation until explained."
+            "events/files are invalid for positive path confirmation until explained. "
+            "not-comparable-counter-format means gcov did not provide numeric branch/call counts, commonly "
+            "because the snapshot was generated as percentages instead of count mode."
         ),
     }
 

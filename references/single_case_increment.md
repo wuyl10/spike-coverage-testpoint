@@ -11,6 +11,8 @@ Strong evidence:
 - A required line/branch/call increased during an isolated run.
 - Spike log, commit log, target PC, or equivalent run evidence confirms the
   target guest instruction executed.
+- Branch/call `.gcov` records use numeric count format, usually from
+  `gcov -b -c`, not percentage-only output.
 
 Limits:
 
@@ -21,6 +23,8 @@ Limits:
   path markers are added.
 - It cannot support positive confirmation if required events disappear from the
   after snapshot, counters decrease/reset, or required files are missing.
+- It cannot support positive branch/call increment confirmation from
+  percentage-only `.gcov` branch/call output.
 
 ## Preferred Workflow
 
@@ -53,6 +57,12 @@ under a run-specific directory, for example:
 ```bash
 mkdir -p /tmp/spike_cov_one_case/before
 # Generate or copy baseline .gcov files into /tmp/spike_cov_one_case/before.
+```
+
+For branch/call increment checks, generate `.gcov` with numeric counts:
+
+```bash
+gcov -b -c -o /path/to/build-dir /path/to/source.cc
 ```
 
 4. Run one tiny case.
@@ -107,11 +117,15 @@ python3 scripts/compare_gcov_snapshots.py \
   controlled single-case increment or marker log proves same-flow correlation.
 - `needs-path-instrumentation`: the desired path cannot be correlated with
   gcov counters and logs; use path markers.
+- `not-comparable-counter-format`: the snapshot has percentage/unknown
+  branch/call records, so regenerate with numeric counts before using it as
+  increment proof.
 
 Invalid for positive path confirmation until explained:
 
 - `decreased-or-reset`
 - `missing-after-event`
+- `not-comparable-counter-format`
 - unresolved `missing-before-event`
 - `missing-before-file`
 - `missing-after-file`

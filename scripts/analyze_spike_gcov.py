@@ -35,6 +35,11 @@ class EvidenceCandidate:
     score: float
     dimension: str
     evidence_class: str
+    evidence_class_reason: str
+    classification_confidence: str
+    entry_file_count: int
+    shared_source_file_count: int
+    inspection_hint_file_count: int
     evidence: str
     entries: list[str]
     rationale: str
@@ -280,7 +285,7 @@ def is_insn_entry(name: str) -> bool:
     return normalize_name(name).startswith("riscv/insns/")
 
 
-def evidence_class_for_group(group: dict, target: Target) -> str:
+def evidence_class_for_group(group: dict, target: Target) -> dict[str, Any]:
     dimension = str(group.get("dimension", "")).lower()
     entries = [str(name) for name in group.get("entries", [])]
     evidence_entries = [str(name) for name in group.get("zero_entries", []) + group.get("low_branch_entries", [])]
@@ -289,12 +294,32 @@ def evidence_class_for_group(group: dict, target: Target) -> str:
     inspection_files = inspection_files_for_candidate(group, target)
     inspection_basenames = {Path(item).name for item in inspection_files}
 
-    if (
-        "shared" in dimension
-        or any(name in source_priority for name in entries + evidence_entries)
-        or any(Path(name).name in source_priority_basenames for name in entries + evidence_entries)
-    ):
-        return "shared-path"
+    entry_file_count = sum(1 for name in entries if is_insn_entry(name))
+    shared_source_file_count = sum(
+        1
+        for name in entries
+        if name in source_priority or Path(name).name in source_priority_basenames
+    )
+    inspection_hint_file_count = len(inspection_files)
+
+    if "shared" in dimension:
+        return {
+            "class": "shared-path",
+            "reason": "dimension name declares shared path scope",
+            "confidence": "medium",
+            "entry_file_count": entry_file_count,
+            "shared_source_file_count": shared_source_file_count,
+            "inspection_hint_file_count": inspection_hint_file_count,
+        }
+    if shared_source_file_count:
+        return {
+            "class": "shared-path",
+            "reason": "dimension entries include source_priority shared files",
+            "confidence": "high",
+            "entry_file_count": entry_file_count,
+            "shared_source_file_count": shared_source_file_count,
+            "inspection_hint_file_count": inspection_hint_file_count,
+        }
 
     inspected_shared = any(
         item in inspection_basenames
@@ -303,13 +328,34 @@ def evidence_class_for_group(group: dict, target: Target) -> str:
         for item in source_priority
     )
     if inspected_shared:
-        return "mixed"
+        return {
+            "class": "mixed",
+            "reason": "candidate entries are not shared files, but inspection_hints include source_priority files",
+            "confidence": "medium",
+            "entry_file_count": entry_file_count,
+            "shared_source_file_count": shared_source_file_count,
+            "inspection_hint_file_count": inspection_hint_file_count,
+        }
 
     class_basis = evidence_entries or entries
     if class_basis and all(is_insn_entry(name) for name in class_basis):
-        return "entry"
+        return {
+            "class": "entry",
+            "reason": "coverage gap basis is only riscv/insns entries",
+            "confidence": "high",
+            "entry_file_count": entry_file_count,
+            "shared_source_file_count": shared_source_file_count,
+            "inspection_hint_file_count": inspection_hint_file_count,
+        }
 
-    return "mixed"
+    return {
+        "class": "mixed",
+        "reason": "mixed or unknown file basis; source review required",
+        "confidence": "low",
+        "entry_file_count": entry_file_count,
+        "shared_source_file_count": shared_source_file_count,
+        "inspection_hint_file_count": inspection_hint_file_count,
+    }
 
 
 def score_group(group: dict) -> float:
@@ -336,7 +382,10 @@ def build_candidates(groups: list[dict], focus: str | None, target: Target) -> l
         dim = group["dimension"]
         all_names = " ".join(group["zero_entries"] + group["low_branch_entries"]).lower()
         if focus_lc and focus_lc not in dim.lower() and focus_lc not in all_names:
-            continue
+            hint_text = " ".join(target.inspection_hints.get(dim, [])).lower()
+            duplicate_text = " ".join(target.duplicate_search_terms.get(dim, [])).lower()
+            if focus_lc not in hint_text and focus_lc not in duplicate_text:
+                continue
 
         zero = short_names(group["zero_entries"], limit=8)
         low = short_names(group["low_branch_entries"], limit=8)
@@ -353,11 +402,17 @@ def build_candidates(groups: list[dict], focus: str | None, target: Target) -> l
         if group.get("call_pct") is not None and group["call_pct"] < 10.0:
             rationale_bits.append("call coverage <10%")
 
+        class_info = evidence_class_for_group(group, target)
         candidates.append(
             EvidenceCandidate(
                 score=score_group(group),
                 dimension=dim,
-                evidence_class=evidence_class_for_group(group, target),
+                evidence_class=class_info["class"],
+                evidence_class_reason=class_info["reason"],
+                classification_confidence=class_info["confidence"],
+                entry_file_count=class_info["entry_file_count"],
+                shared_source_file_count=class_info["shared_source_file_count"],
+                inspection_hint_file_count=class_info["inspection_hint_file_count"],
                 evidence=evidence,
                 entries=group["zero_entries"][:10] or group["low_branch_entries"][:10],
                 rationale="; ".join(rationale_bits)
@@ -489,14 +544,18 @@ def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
 
     def print_candidate_table(title: str, candidates: list[dict], max_rows: int) -> None:
         print(f"\n## {title} (top {max_rows})")
-        print("| Rank | Score | Class | Dimension | Coverage evidence | Rationale | Representative entries | Inspect next |")
-        print("|---:|---:|---|---|---|---|---|---|")
+        print("| Rank | Score | Class | Class reason | Dimension | Coverage evidence | Rationale | Representative entries | Inspect next |")
+        print("|---:|---:|---|---|---|---|---|---|---|")
         for idx, candidate in enumerate(candidates[:max_rows], start=1):
             print(
-                "| {rank} | {score:.2f} | {klass} | {dimension} | {evidence} | {rationale} | `{entries}` | `{inspect}` |".format(
+                "| {rank} | {score:.2f} | {klass} | {reason} | {dimension} | {evidence} | {rationale} | `{entries}` | `{inspect}` |".format(
                     rank=idx,
                     score=candidate["score"],
                     klass=candidate.get("evidence_class", "unknown"),
+                    reason=(
+                        str(candidate.get("evidence_class_reason", "-"))
+                        + f" ({candidate.get('classification_confidence', 'unknown')})"
+                    ).replace("|", "\\|"),
                     dimension=candidate["dimension"],
                     evidence=candidate["evidence"].replace("|", "\\|"),
                     rationale=candidate["rationale"].replace("|", "\\|"),

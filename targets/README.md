@@ -45,6 +45,13 @@ not in `SKILL.md` and not hardcoded in scripts.
 - `handoff_defaults`: default suggested locations and gate note for the
   hyptest-workflow handoff packet. It is advisory only; hyptest-workflow still
   performs its own profile/gate checks.
+- `special_run_scope`: target areas that usually require non-default runtime,
+  simulator, device, log, or instrumentation setup.
+- `manual_only_dimensions`: dimensions that must not be recommended for default
+  gate without an explicit target/profile decision.
+- `dimension_metadata`: optional per-dimension metadata such as
+  `default_gate_allowed`, `requires_runtime_option`, and a dimension-specific
+  `gate_note`.
 
 `build_handoff_packet.py` also reports `missing_inspection_files` when the
 summary recommends `.gcov` files that were not included in the line-level
@@ -71,6 +78,9 @@ Recommended subfields:
   combine blindly.
 - `path_markers`: marker names plus meanings and suggested Spike source
   locations for coverage-only instrumentation.
+- `marker_correlation_policy`: rules for deciding whether marker records prove
+  same-flow correlation. Strong records should include pc+insn, seq, or access_id;
+  JSON without correlation fields and text fallback are weak evidence.
 - `single_case_increment`: how to interpret before/after `.gcov` snapshot
   deltas for one tiny case.
 

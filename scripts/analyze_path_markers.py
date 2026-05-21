@@ -30,6 +30,8 @@ class MarkerRecord:
     markers: list[str]
     raw: str
     record_format: str
+    correlation_strength: str
+    correlation_fields: list[str]
 
 
 @dataclass
@@ -39,6 +41,7 @@ class SequenceResult:
     match_mode: str
     count: int
     json_record_count: int
+    weak_json_record_count: int
     text_record_count: int
     example_line: int | None
     example_pc: str | None
@@ -68,6 +71,8 @@ def parse_record(line_no: int, text: str) -> MarkerRecord | None:
             markers=markers,
             raw=stripped,
             record_format="text",
+            correlation_strength="text-fallback-weak",
+            correlation_fields=[],
         )
 
     if not isinstance(obj, dict):
@@ -83,6 +88,17 @@ def parse_record(line_no: int, text: str) -> MarkerRecord | None:
     if not markers:
         return None
 
+    correlation_fields = [
+        name
+        for name in ("pc", "insn", "seq", "hart", "access_id", "record_kind")
+        if obj.get(name) is not None
+    ]
+    field_set = set(correlation_fields)
+    has_dynamic_correlation = {"pc", "insn"}.issubset(field_set) or bool(
+        {"seq", "access_id"} & field_set
+    )
+    correlation_strength = "per-record-json" if has_dynamic_correlation else "json-record-weak"
+
     return MarkerRecord(
         line=line_no,
         pc=str(obj.get("pc")) if obj.get("pc") is not None else None,
@@ -90,6 +106,8 @@ def parse_record(line_no: int, text: str) -> MarkerRecord | None:
         markers=markers,
         raw=stripped,
         record_format="json",
+        correlation_strength=correlation_strength,
+        correlation_fields=correlation_fields,
     )
 
 
@@ -153,12 +171,25 @@ def analyze_sequences(
     for sequence in sequences:
         required = sequence["markers"]
         matches = [record for record in records if sequence_matches(record, required, ordered)]
-        json_matches = [record for record in matches if record.record_format == "json"]
+        json_matches = [
+            record
+            for record in matches
+            if record.record_format == "json" and record.correlation_strength == "per-record-json"
+        ]
+        weak_json_matches = [
+            record
+            for record in matches
+            if record.record_format == "json" and record.correlation_strength != "per-record-json"
+        ]
         text_matches = [record for record in matches if record.record_format != "json"]
         if json_matches:
             status = "marker-sequence-observed"
             evidence_strength = "per-record-json"
             example = json_matches[0]
+        elif weak_json_matches:
+            status = "json-marker-sequence-observed-weak"
+            evidence_strength = "json-record-weak"
+            example = weak_json_matches[0]
         elif text_matches:
             status = "text-marker-sequence-observed-weak"
             evidence_strength = "text-fallback-weak"
@@ -174,6 +205,7 @@ def analyze_sequences(
                 match_mode="ordered-subsequence" if ordered else "same-record-subset",
                 count=len(matches),
                 json_record_count=len(json_matches),
+                weak_json_record_count=len(weak_json_matches),
                 text_record_count=len(text_matches),
                 example_line=example.line if example else None,
                 example_pc=example.pc if example else None,
@@ -200,6 +232,13 @@ def summarize_record_formats(records: list[MarkerRecord]) -> dict[str, int]:
     return counts
 
 
+def summarize_correlation_strength(records: list[MarkerRecord]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in records:
+        counts[record.correlation_strength] = counts.get(record.correlation_strength, 0) + 1
+    return counts
+
+
 def print_markdown(result: dict[str, Any], top_markers: int) -> None:
     print("## Path-marker evidence")
     print()
@@ -208,25 +247,30 @@ def print_markdown(result: dict[str, Any], top_markers: int) -> None:
     if result.get("record_format_counts"):
         format_bits = [f"{name}={count}" for name, count in sorted(result["record_format_counts"].items())]
         print(f"- record formats: {', '.join(format_bits)}")
+    if result.get("correlation_strength_counts"):
+        strength_bits = [f"{name}={count}" for name, count in sorted(result["correlation_strength_counts"].items())]
+        print(f"- correlation strengths: {', '.join(strength_bits)}")
     print("- meaning: JSON per-instruction/access records can preserve same-flow marker correlation")
+    print("- required strong JSON fields: pc+insn, seq, or access_id should identify a dynamic instruction/access record")
     print("- caution: text fallback is weak evidence and must not be treated as final path proof")
     print()
 
     if result["sequence_results"]:
         print("## Required sequences")
         print()
-        print("| Sequence | Status | Strength | Match mode | Count | JSON | Text | Example line | Example PC | Example insn | Required markers |")
-        print("|---|---|---|---|---:|---:|---:|---:|---|---|---|")
+        print("| Sequence | Status | Strength | Match mode | Count | Strong JSON | Weak JSON | Text | Example line | Example PC | Example insn | Required markers |")
+        print("|---|---|---|---|---:|---:|---:|---:|---:|---|---|---|")
         for item in result["sequence_results"]:
             markers = ", ".join(f"`{marker}`" for marker in item["required_markers"])
             print(
-                "| {name} | {status} | {strength} | {mode} | {count} | {json_count} | {text_count} | {line} | {pc} | {insn} | {markers} |".format(
+                "| {name} | {status} | {strength} | {mode} | {count} | {json_count} | {weak_json_count} | {text_count} | {line} | {pc} | {insn} | {markers} |".format(
                     name=item["name"],
                     status=item["status"],
                     strength=item["evidence_strength"],
                     mode=item["match_mode"],
                     count=item["count"],
                     json_count=item["json_record_count"],
+                    weak_json_count=item["weak_json_record_count"],
                     text_count=item["text_record_count"],
                     line=item["example_line"] if item["example_line"] is not None else "-",
                     pc=item["example_pc"] or "-",
@@ -259,6 +303,7 @@ def main() -> int:
         "log": str(args.log),
         "record_count": len(records),
         "record_format_counts": summarize_record_formats(records),
+        "correlation_strength_counts": summarize_correlation_strength(records),
         "marker_counts": summarize_markers(records),
         "sequence_results": [asdict(item) for item in analyze_sequences(records, sequences, args.ordered)],
     }

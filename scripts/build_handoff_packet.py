@@ -22,6 +22,10 @@ def short_name(path: str) -> str:
     return name
 
 
+def gcov_basename_for_entry(entry: str) -> str:
+    return Path(entry).name + ".gcov"
+
+
 def needs_agent(reason: str) -> str:
     return f"needs source confirmation: {reason}"
 
@@ -39,11 +43,18 @@ def line_evidence_for_dimension(
     inspect_reports: list[dict[str, Any]],
     inspection_files: list[str],
     representative_entries: list[str],
+    dimension: str,
+    duplicate_search_terms: list[str],
     max_items: int,
 ) -> list[dict[str, Any]]:
-    representative_gcov = {Path(entry).name + ".gcov" for entry in representative_entries}
+    representative_gcov = {gcov_basename_for_entry(entry) for entry in representative_entries}
     wanted = {Path(item).name for item in inspection_files} | representative_gcov
     exact_wanted = wanted & representative_gcov
+    semantic_terms = [
+        term.lower()
+        for term in [dimension, *duplicate_search_terms, *[short_name(entry) for entry in representative_entries]]
+        if term
+    ]
 
     def report_rank(report: dict[str, Any]) -> tuple[int, str]:
         gcov_name = Path(report.get("gcov_file", "")).name
@@ -62,7 +73,24 @@ def line_evidence_for_dimension(
         key=report_rank,
     )
 
-    def collect(allow_shared: bool) -> list[dict[str, Any]]:
+    def classify_report(gcov_name: str) -> tuple[str, str]:
+        if gcov_name in representative_gcov:
+            return "exact-entry", "exact representative entry .gcov was inspected"
+        if gcov_name in wanted:
+            if any(term and term in gcov_name.lower() for term in semantic_terms):
+                return "dimension-shared-source", "inspection file name matches dimension or semantic terms"
+            return "inspection-hint-weak", "inspection file came from target hints, not an exact entry match"
+        return "unmatched-inspect-report", "inspect report was not requested for this candidate"
+
+    def function_matches_semantic_terms(fn: dict[str, Any]) -> bool:
+        haystack_parts = [str(fn.get("name") or ""), str(fn.get("mangled_name") or "")]
+        for event in fn.get("events", []):
+            haystack_parts.append(str(event.get("text") or ""))
+            haystack_parts.append(str(event.get("source_code") or ""))
+        haystack = " ".join(haystack_parts).lower()
+        return any(term and term in haystack for term in semantic_terms)
+
+    def collect(allow_shared: bool, prefer_semantic: bool) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         for report in ordered_reports:
             gcov_name = Path(report.get("gcov_file", "")).name
@@ -71,7 +99,13 @@ def line_evidence_for_dimension(
             exact = gcov_name in exact_wanted or gcov_name in representative_gcov
             if not allow_shared and not exact:
                 continue
-            for fn in report.get("functions", [])[:max_items]:
+            functions = report.get("functions", [])
+            if prefer_semantic:
+                matching = [fn for fn in functions if function_matches_semantic_terms(fn)]
+                if matching:
+                    functions = matching
+            evidence_strength, strength_reason = classify_report(gcov_name)
+            for fn in functions[:max_items]:
                 events = fn.get("events", [])
                 first = next((event for event in events if event.get("source_line") is not None), None)
                 counts: dict[str, int] = {}
@@ -81,6 +115,9 @@ def line_evidence_for_dimension(
                     {
                         "gcov_file": gcov_name,
                         "evidence_match": "representative-entry" if exact else "inspection-hint",
+                        "evidence_strength": evidence_strength,
+                        "strength_reason": strength_reason,
+                        "semantic_term_match": function_matches_semantic_terms(fn),
                         "function": fn.get("name"),
                         "first_source_line": first.get("source_line") if first else None,
                         "first_evidence": first.get("text") if first else None,
@@ -91,11 +128,42 @@ def line_evidence_for_dimension(
                     return results
         return results
 
-    results = collect(allow_shared=False)
+    results = collect(allow_shared=False, prefer_semantic=False)
     if results:
         return results
-    results = collect(allow_shared=True)
+    results = collect(allow_shared=True, prefer_semantic=True)
+    if results:
+        return results
+    results = collect(allow_shared=True, prefer_semantic=False)
     return results
+
+
+def line_evidence_status(
+    evidence: list[dict[str, Any]],
+    inspection_files: list[str],
+    missing_files: list[str],
+) -> str:
+    if missing_files and not evidence:
+        return "unreviewed-missing-files"
+    strengths = {item.get("evidence_strength") for item in evidence}
+    if "exact-entry" in strengths:
+        return "exact-entry-evidence"
+    if "dimension-shared-source" in strengths:
+        return "dimension-shared-source-evidence"
+    if evidence:
+        return "weak-inspection-hint-only"
+    if inspection_files:
+        return "no-line-evidence-from-requested-files"
+    return "no-line-evidence-requested"
+
+
+def do_not_finalize_without(status: str, missing_files: list[str]) -> list[str]:
+    items: list[str] = []
+    if status in {"weak-inspection-hint-only", "no-line-evidence-from-requested-files", "unreviewed-missing-files"}:
+        items.append("inspect exact entry .gcov files or source-priority shared files for this candidate")
+    if missing_files:
+        items.append("inspect missing files: " + ", ".join(missing_files[:8]))
+    return items
 
 
 def missing_inspection_files(inspect_reports: list[dict[str, Any]], inspection_files: list[str]) -> list[str]:
@@ -135,7 +203,26 @@ def duplicate_terms(target: dict[str, Any], dimension: str) -> list[str]:
     return sorted(dict.fromkeys(matched))
 
 
-def profile_gate_stub(candidate: dict[str, Any], target: dict[str, Any]) -> dict[str, str]:
+def infer_profile_from_entries(entries: list[str], dimension: str) -> dict[str, Any]:
+    haystack = " ".join([dimension, *entries]).lower()
+    rules = [
+        ("V", ("riscv/insns/v", " vector ", "vector")),
+        ("A / Zaamo / Zalrsc", ("amo", "amocas", "lr_", "sc_")),
+        ("C / Zc*", ("riscv/insns/c_", " compressed ", "compressed")),
+        ("F/D/Q/Zfh family", ("riscv/insns/fl", "riscv/insns/fs", " fp ", "floating")),
+        ("Zicbom/Zicboz/Zicbop family", ("cbo_", "cbo/", "cbo")),
+        ("S-mode translation", ("sfence_vma", "satp", "pte", "tlb", "stage1")),
+        ("Debug/trigger", ("trigger", "mcontrol", "debug")),
+    ]
+    matched = [name for name, needles in rules if any(needle in haystack for needle in needles)]
+    return {
+        "extension_required_inferred": matched or ["unknown"],
+        "inference_basis": "rough inference from coverage dimension and representative entries",
+        "needs_agent_profile_confirmation": True,
+    }
+
+
+def profile_gate_stub(candidate: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
     spec = target.get("spec", {}) if isinstance(target.get("spec"), dict) else {}
     included = spec.get("included_extensions_or_features", [])
     excluded = spec.get("excluded_extensions_or_features", [])
@@ -146,11 +233,13 @@ def profile_gate_stub(candidate: dict[str, Any], target: dict[str, Any]) -> dict
     spec_profile = spec.get("profile", "")
     entries = ", ".join(candidate.get("entries", [])[:4])
     class_note = candidate.get("evidence_class", "unknown")
+    inferred = infer_profile_from_entries(candidate.get("entries", []), str(candidate.get("dimension", "")))
     return {
         "extension_required": needs_agent(
             "infer required ISA/profile feature from source and representative entries"
             + (f" ({entries})" if entries else "")
         ),
+        **inferred,
         "current_profile_evidence": (
             f"target spec profile={spec_profile or 'unspecified'}; "
             f"included={included}; excluded={excluded}"
@@ -195,18 +284,26 @@ def build_packet(
     for candidate in candidates:
         dimension = candidate.get("dimension", "")
         inspection_files = candidate.get("inspection_files", [])
+        duplicate_search_terms = duplicate_terms(target, dimension)
+        line_evidence = line_evidence_for_dimension(
+            inspect_reports,
+            inspection_files,
+            candidate.get("entries", []),
+            dimension,
+            duplicate_search_terms,
+            max_line_evidence,
+        )
+        missing_files = missing_inspection_files(inspect_reports, inspection_files)
+        evidence_status = line_evidence_status(line_evidence, inspection_files, missing_files)
         packet_candidates.append(
             {
                 "candidate_name": needs_agent(f"interpret {dimension} as an architecture-visible scenario"),
                 "coverage_dimension": dimension,
                 "evidence_class": candidate.get("evidence_class", "unknown"),
                 "coverage_evidence": candidate.get("evidence"),
-                "source_or_gcov_evidence": line_evidence_for_dimension(
-                    inspect_reports,
-                    inspection_files,
-                    candidate.get("entries", []),
-                    max_line_evidence,
-                ),
+                "line_evidence_status": evidence_status,
+                "source_or_gcov_evidence": line_evidence,
+                "do_not_finalize_without": do_not_finalize_without(evidence_status, missing_files),
                 "path_confidence": needs_agent(
                     "choose one after evidence review: "
                     + " | ".join(
@@ -232,7 +329,7 @@ def build_packet(
                 "scope_status": needs_agent("in-scope | out-of-scope | needs target decision"),
                 "expected_observable": needs_agent("register/memory/trap/CSR/vector observable"),
                 "profile_gate": profile_gate_stub(candidate, target),
-                "duplicate_search_terms": duplicate_terms(target, dimension),
+                "duplicate_search_terms": duplicate_search_terms,
                 "suggested_test_point_area": handoff.get("suggested_test_point_area", ""),
                 "suggested_case_area": handoff.get("suggested_case_area", ""),
                 "gate_note": handoff.get("default_gate_note", "needs profile decision"),
@@ -242,7 +339,7 @@ def build_packet(
                 ],
                 "implementation_owner": handoff.get("implementation_owner", "hyptest-workflow"),
                 "inspection_files": inspection_files,
-                "missing_inspection_files": missing_inspection_files(inspect_reports, inspection_files),
+                "missing_inspection_files": missing_files,
                 "representative_entries": candidate.get("entries", []),
                 "script_rationale": candidate.get("rationale"),
             }
@@ -273,6 +370,7 @@ def print_markdown(packet: dict[str, Any]) -> None:
         print(f"- coverage_dimension: {candidate['coverage_dimension']}")
         print(f"- evidence_class: {candidate['evidence_class']}")
         print(f"- coverage_evidence: {candidate['coverage_evidence']}")
+        print(f"- line_evidence_status: {candidate['line_evidence_status']}")
         print(f"- path_confidence: {candidate['path_confidence']}")
         if candidate.get("path_signature"):
             print("- path_signature:")
@@ -299,13 +397,18 @@ def print_markdown(packet: dict[str, Any]) -> None:
             print("- inspection_files: `" + "`, `".join(candidate["inspection_files"]) + "`")
         if candidate["missing_inspection_files"]:
             print("- missing_inspection_files: `" + "`, `".join(candidate["missing_inspection_files"][:12]) + "`")
+        if candidate["do_not_finalize_without"]:
+            print("- do_not_finalize_without:")
+            for item in candidate["do_not_finalize_without"]:
+                print(f"  - {item}")
         if candidate["representative_entries"]:
             print("- representative_entries: `" + "`, `".join(candidate["representative_entries"][:8]) + "`")
         if candidate["source_or_gcov_evidence"]:
             print("- source_or_gcov_evidence:")
             for item in candidate["source_or_gcov_evidence"]:
                 print(
-                    f"  - `{item['gcov_file']}` ({item['evidence_match']}) `{item['function']}` "
+                    f"  - `{item['gcov_file']}` ({item['evidence_strength']}, {item['evidence_match']}) "
+                    f"`{item['function']}` "
                     f"line {item['first_source_line']}: {item['first_evidence']}"
                 )
         print()

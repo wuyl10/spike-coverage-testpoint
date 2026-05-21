@@ -569,7 +569,12 @@
         "If counters were only covered in aggregate by a suite, mark edge-covered-path-unknown.",
         "If internal path correlation cannot be proven by gcov increment plus log, mark needs-path-instrumentation and propose path markers."
       ]
-    }
+    },
+    "marker_correlation_policy": [
+      "Strong marker evidence requires JSON per-instruction/access records with pc+insn, seq, or access_id correlation fields.",
+      "JSON records without correlation fields and text fallback records are weak evidence only.",
+      "Marker sequence observation is evidence; the agent must still validate marker placement and architectural observable."
+    ]
   },
   "duplicate_search_terms": {
     "core shared paths": [
@@ -849,5 +854,24 @@
     "suggested_case_area": "ai_test_cases or manual_test_cases/memblock after hyptest-workflow profile decision",
     "default_gate_note": "needs profile decision",
     "implementation_owner": "hyptest-workflow"
+  },
+  "special_run_scope": [
+    "memtracer/log paths",
+    "MMIO/device paths when deterministic device setup is not part of the default hyptest platform"
+  ],
+  "manual_only_dimensions": [
+    "memtracer/log paths"
+  ],
+  "dimension_metadata": {
+    "memtracer/log paths": {
+      "default_gate_allowed": false,
+      "requires_runtime_option": true,
+      "gate_note": "manual/special-run unless the default platform exposes deterministic memtracer/log observables"
+    },
+    "MMIO/device paths": {
+      "default_gate_allowed": false,
+      "requires_runtime_option": true,
+      "gate_note": "manual/special-run unless a deterministic device/MMIO setup is available in default hyptest"
+    }
   }
 }

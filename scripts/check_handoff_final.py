@@ -41,6 +41,13 @@ RULES = [
 ]
 
 
+DEFAULT_GATE_YES_RE = re.compile(
+    r"default_gate_eligible\s*[:=-]\s*(`?yes`?|true)\b|"
+    r"default_gate_eligible\s+(is\s+)?(`?yes`?|true)\b",
+    re.IGNORECASE,
+)
+
+
 def check_file(path: Path) -> list[str]:
     findings: list[str] = []
     text = path.read_text(errors="replace")
@@ -51,14 +58,45 @@ def check_file(path: Path) -> list[str]:
     return findings
 
 
+def strict_handoff_check(path: Path) -> list[str]:
+    findings: list[str] = []
+    text = path.read_text(errors="replace")
+    required_terms = [
+        "evidence_class",
+        "line_evidence_status",
+        "path_confidence",
+        "profile_gate",
+        "expected_observable",
+    ]
+    for term in required_terms:
+        if term not in text:
+            findings.append(f"{path}: strict-handoff: missing `{term}`")
+
+    default_gate_lines = [
+        (line_no, line)
+        for line_no, line in enumerate(text.splitlines(), start=1)
+        if re.search(r"gate_note:\s*default|gate_note:\s*`?default", line, re.IGNORECASE)
+    ]
+    for line_no, _line in default_gate_lines:
+        window = "\n".join(text.splitlines()[max(0, line_no - 12): line_no + 12]).lower()
+        if not DEFAULT_GATE_YES_RE.search(window):
+            findings.append(
+                f"{path}:{line_no}: strict-handoff: default gate requires nearby default_gate_eligible: yes evidence"
+            )
+    return findings
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("files", nargs="+", type=Path, help="markdown/json/text files to check")
+    parser.add_argument("--strict-handoff", action="store_true", help="also require handoff evidence/profile fields")
     args = parser.parse_args()
 
     findings: list[str] = []
     for path in args.files:
         findings.extend(check_file(path))
+        if args.strict_handoff:
+            findings.extend(strict_handoff_check(path))
 
     if findings:
         print("handoff final check failed:")

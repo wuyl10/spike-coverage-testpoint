@@ -38,6 +38,10 @@ REQUIRED_TOP_LEVEL = {
 
 OPTIONAL_TOP_LEVEL = {
     "path_analysis",
+    "special_run_scope",
+    "manual_only_dimensions",
+    "dimension_metadata",
+    "duplicate_search_aliases",
 }
 
 REQUIRED_HANDOFF = {
@@ -127,6 +131,12 @@ def validate(path: Path) -> tuple[list[str], list[str]]:
 
     check_str_list_map(data, "duplicate_search_terms", errors)
     check_str_list_map(data, "inspection_hints", errors)
+    if "special_run_scope" in data:
+        check_str_list(data, "special_run_scope", errors)
+    if "manual_only_dimensions" in data:
+        check_str_list(data, "manual_only_dimensions", errors)
+    if "dimension_metadata" in data and not isinstance(data.get("dimension_metadata"), dict):
+        errors.append("`dimension_metadata` must be an object when present")
 
     dimensions = data.get("dimensions")
     if not isinstance(dimensions, dict) or not dimensions:
@@ -146,6 +156,16 @@ def validate(path: Path) -> tuple[list[str], list[str]]:
         extra_hints = sorted(set(hints) - set(dimensions))
         if extra_hints:
             warnings.append("inspection_hints without matching dimensions: " + ", ".join(extra_hints))
+        manual_dims = data.get("manual_only_dimensions", [])
+        if is_str_list(manual_dims):
+            missing_manual_dims = sorted(set(manual_dims) - set(dimensions))
+            if missing_manual_dims:
+                warnings.append("manual_only_dimensions without matching dimensions: " + ", ".join(missing_manual_dims))
+        metadata = data.get("dimension_metadata", {})
+        if isinstance(metadata, dict):
+            extra_metadata = sorted(set(metadata) - set(dimensions))
+            if extra_metadata:
+                warnings.append("dimension_metadata without matching dimensions: " + ", ".join(extra_metadata))
     else:
         errors.append("each `dimensions.*` value must be a list of strings")
 
@@ -185,6 +205,21 @@ def validate_path_analysis(value: Any, errors: list[str], warnings: list[str]) -
     confidence = value.get("confidence_levels", [])
     if confidence is not None and not is_str_list(confidence):
         errors.append("`path_analysis.confidence_levels` must be a list of strings")
+    elif is_str_list(confidence):
+        recommended = {
+            "confirmed-not-executed",
+            "counter-increment-observed",
+            "single-case-increment-confirmed",
+            "edge-covered-path-unknown",
+            "needs-path-instrumentation",
+            "out-of-scope",
+        }
+        missing = sorted(recommended - set(confidence))
+        if missing:
+            warnings.append("`path_analysis.confidence_levels` missing recommended labels: " + ", ".join(missing))
+        stale = sorted({"confirmed-executed", "marker-confirmed"} & set(confidence))
+        if stale:
+            errors.append("`path_analysis.confidence_levels` contains stale overclaiming labels: " + ", ".join(stale))
 
     for key in ("evidence_policy", "path_signature_fields"):
         if key in value and not is_str_list(value.get(key)):
@@ -213,6 +248,13 @@ def validate_path_analysis(value: Any, errors: list[str], warnings: list[str]) -
                     errors.append(
                         f"`path_analysis.path_markers.{marker}.suggested_locations` must be a list of strings"
                     )
+            policy = value.get("marker_correlation_policy")
+            if markers and not policy:
+                warnings.append(
+                    "`path_analysis.marker_correlation_policy` is missing; marker evidence may overclaim same-flow correlation"
+                )
+            elif policy is not None and not is_str_list(policy):
+                errors.append("`path_analysis.marker_correlation_policy` must be a list of strings")
 
     single_case = value.get("single_case_increment", {})
     if single_case is not None:
@@ -222,6 +264,9 @@ def validate_path_analysis(value: Any, errors: list[str], warnings: list[str]) -
             for key in ("required_practice", "interpretation"):
                 if key in single_case and not is_str_list(single_case.get(key)):
                     errors.append(f"`path_analysis.single_case_increment.{key}` must be a list of strings")
+            interpretation = " ".join(single_case.get("interpretation", [])) if is_str_list(single_case.get("interpretation", [])) else ""
+            if "counter-increment-observed" not in interpretation:
+                warnings.append("`path_analysis.single_case_increment.interpretation` should mention counter-increment-observed downgrade")
 
 
 def main() -> int:

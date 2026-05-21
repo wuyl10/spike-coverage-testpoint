@@ -91,7 +91,12 @@
         "If all required counters increase in a tiny single-purpose case and Spike log/profile evidence confirms the target instruction, mark single-case-increment-confirmed.",
         "If edges are covered only in aggregate, mark edge-covered-path-unknown."
       ]
-    }
+    },
+    "marker_correlation_policy": [
+      "Strong marker evidence requires JSON per-instruction/access records with pc+insn, seq, or access_id correlation fields.",
+      "JSON records without correlation fields and text fallback records are weak evidence only.",
+      "Marker sequence observation is evidence; the agent must still validate marker placement and architectural observable."
+    ]
   },
   "inspection_hints": {
     "example shared paths": [
@@ -113,5 +118,8 @@
     "suggested_case_area": "",
     "default_gate_note": "needs profile decision",
     "implementation_owner": "hyptest-workflow"
-  }
+  },
+  "special_run_scope": [],
+  "manual_only_dimensions": [],
+  "dimension_metadata": {}
 }

@@ -22,7 +22,9 @@
         "Includes a structured hyptest-workflow handoff packet for implementation.",
         "Fills handoff semantic fields by agent reasoning rather than leaving raw script TODOs in the final answer.",
         "Does not leave raw TODO(agent) placeholders in the final user-facing handoff.",
-        "Separates entry coverage gaps from shared semantic path gaps."
+        "Separates entry coverage gaps from shared semantic path gaps.",
+        "Reports line_evidence_status and does not finalize weak inspection hints as strong source evidence.",
+        "Mentions evidence_class_reason or classification confidence when relying on candidate ranking."
       ]
     },
     {
@@ -73,7 +75,9 @@
         "Translates at least three uncovered code paths into architecture-visible in-scope test ideas.",
         "Includes required evidence points and path confidence for path-sensitive candidates.",
         "Marks special-run paths such as tracer/log separately when encountered.",
-        "Does not modify hyptest source files."
+        "Does not modify hyptest source files.",
+        "Reports excluded-by-filter counts and treats high filter counts as a caveat.",
+        "Does not treat inspection-hint-only evidence as final candidate proof."
       ]
     },
     {
@@ -122,7 +126,9 @@
         "May use build_handoff_packet.py for the skeleton but does not treat skeleton TODOs as final analysis.",
         "States that hyptest-workflow must still do duplicate checks and profile/gate checks.",
         "Does not modify hyptest source files.",
-        "Includes profile_gate fields before recommending any default-gate implementation."
+        "Includes profile_gate fields before recommending any default-gate implementation.",
+        "Includes line_evidence_status and do_not_finalize_without fields in the handoff packet.",
+        "Runs or recommends strict handoff final checking before using the packet for implementation."
       ]
     },
     {
@@ -141,7 +147,10 @@
         "Uses or recommends analyze_path_markers.py for per-instruction/access marker logs.",
         "Keeps path marker instrumentation gated to coverage Spike and does not require normal Spike behavior changes.",
         "Does not write hyptest cases unless separately requested.",
-        "Treats marker-sequence-observed as marker evidence and text-marker-sequence-observed-weak as weak evidence, not final proof by itself."
+        "Treats marker-sequence-observed as marker evidence and text-marker-sequence-observed-weak as weak evidence, not final proof by itself.",
+        "Explains that strong marker evidence requires pc+insn, seq, or access_id correlation fields.",
+        "Mentions possible key drift or stable-line matching when comparing before/after gcov snapshots.",
+        "Requires numeric branch/call counts for single-case increment proof and downgrades percentage-only snapshots as not-comparable-counter-format."
       ]
     }
   ]
