@@ -433,23 +433,23 @@ def print_markdown(
     total_calls = sum(report.never_calls for report in reports)
     total_excluded_functions = sum(report.excluded_counts.functions for report in reports)
     total_excluded_events = sum(report.excluded_counts.events for report in reports)
-    print("# Spike gcov line evidence")
+    print("# Spike gcov 行级证据")
     print()
-    print("## Conclusion")
+    print("## 结论")
     print()
     print(
-        f"- Inspected {len(reports)} `.gcov` file(s): uncovered lines={total_uncovered}, "
-        f"never/zero branches={total_branches}, never/zero calls={total_calls}."
+        f"- 已精查 {len(reports)} 个 `.gcov` 文件：未覆盖源码行={total_uncovered}，"
+        f"never/zero 分支={total_branches}，never/zero 调用={total_calls}。"
     )
     print(
-        f"- Target filters excluded functions={total_excluded_functions}, events={total_excluded_events}; "
-        "filtered evidence can affect candidate completeness."
+        f"- Target 过滤规则排除了函数={total_excluded_functions}，事件={total_excluded_events}；"
+        "被过滤的证据可能影响候选完整性。"
     )
-    print("- Use the function/source evidence below to map coverage gaps to architecture scenarios; this report does not decide test intent by itself.")
+    print("- 下面的函数/源码证据用于把覆盖率缺口映射到架构场景；本报告本身不决定测试意图。")
     print()
-    print("## Data")
+    print("## 数据")
     print()
-    print("| File | Source | Uncovered lines | Never/zero branches | Never/zero calls | Excluded functions | Excluded events |")
+    print("| 文件 | Source | 未覆盖行 | never/zero 分支 | never/zero 调用 | 已排除函数 | 已排除事件 |")
     print("|---|---|---:|---:|---:|---:|---:|")
     for report in reports:
         print(
@@ -457,24 +457,24 @@ def print_markdown(
             f"{report.never_branches} | {report.never_calls} | {report.excluded_counts.functions} | {report.excluded_counts.events} |"
         )
     print()
-    print("## Limits / Next steps")
+    print("## 限制与下一步")
     print()
-    print("- Line evidence identifies uncovered source/branch/call points, not the architecture scenario by itself.")
-    print("- Map the listed functions and source lines to a target path signature before writing tests.")
-    print("- If same-flow correlation matters, confirm with a single-case increment run or path markers.")
+    print("- 行级证据只能指出未覆盖源码/分支/调用点，不能单独说明架构场景。")
+    print("- 写测试前，要把列出的函数和源码行映射成 target path signature。")
+    print("- 如果需要证明同一条执行流，需要单 case 增量运行或 path marker。")
     print()
-    print("## Evidence")
+    print("## 证据")
     print()
     for report in reports:
         print(f"## {Path(report.gcov_file).name}")
         print()
-        print(f"- gcov file: `{report.gcov_file}`")
+        print(f"- gcov 文件: `{report.gcov_file}`")
         print(f"- source: `{report.source or '-'}`")
-        print(f"- uncovered lines: {report.uncovered_lines}")
-        print(f"- never branches: {report.never_branches}")
-        print(f"- never calls: {report.never_calls}")
+        print(f"- 未覆盖行: {report.uncovered_lines}")
+        print(f"- never 分支: {report.never_branches}")
+        print(f"- never 调用: {report.never_calls}")
         print(
-            "- excluded by filters: "
+            "- 被过滤规则排除: "
             f"functions={report.excluded_counts.functions}, events={report.excluded_counts.events}"
         )
         print()
@@ -492,22 +492,22 @@ def print_markdown(
 
         for fn in ranked[:max_functions]:
             line = first_source_line(fn.events)
-            print(f"### Function `{fn.name}`")
+            print(f"### 函数 `{fn.name}`")
             print()
             if fn.mangled_name and fn.mangled_name != fn.name:
                 print(f"- mangled: `{fn.mangled_name}`")
             print(
                 f"- called: {fn.called if fn.called is not None else '-'}, "
                 f"returned: {fn.returned_pct or '-'}, blocks: {fn.blocks_pct or '-'}, "
-                f"first source line: {line if line is not None else '-'}"
+                f"首个源码行: {line if line is not None else '-'}"
             )
             counts = {}
             for event in fn.events:
                 counts[event.kind] = counts.get(event.kind, 0) + 1
-            print("- miss kinds: " + ", ".join(f"{key}={value}" for key, value in sorted(counts.items())))
+            print("- miss 类型: " + ", ".join(f"{key}={value}" for key, value in sorted(counts.items())))
             print()
 
-            print("| Miss kinds | Source line | Branch/call detail | Evidence |")
+            print("| Miss 类型 | 源码行 | Branch/call 细节 | 证据 |")
             print("|---|---:|---|---|")
             rows, remaining = grouped_event_rows(fn.events, max_events)
             for kinds, source_line, detail, evidence in rows:

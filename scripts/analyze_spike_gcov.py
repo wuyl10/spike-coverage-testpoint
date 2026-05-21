@@ -439,7 +439,7 @@ def evidence_class_for_group(group: dict, target: Target) -> dict[str, Any]:
     if "shared" in dimension:
         return {
             "class": "shared-path",
-            "reason": "dimension name declares shared path scope",
+            "reason": "维度名声明为共享路径范围",
             "confidence": "medium",
             "entry_file_count": entry_file_count,
             "shared_source_file_count": shared_source_file_count,
@@ -448,7 +448,7 @@ def evidence_class_for_group(group: dict, target: Target) -> dict[str, Any]:
     if shared_source_file_count:
         return {
             "class": "shared-path",
-            "reason": "dimension entries include source_priority shared files",
+            "reason": "维度入口包含 source_priority 共享文件",
             "confidence": "high",
             "entry_file_count": entry_file_count,
             "shared_source_file_count": shared_source_file_count,
@@ -464,7 +464,7 @@ def evidence_class_for_group(group: dict, target: Target) -> dict[str, Any]:
     if inspected_shared:
         return {
             "class": "mixed",
-            "reason": "candidate entries are not shared files, but inspection_hints include source_priority files",
+            "reason": "候选入口不是共享文件，但 inspection_hints 包含 source_priority 文件",
             "confidence": "medium",
             "entry_file_count": entry_file_count,
             "shared_source_file_count": shared_source_file_count,
@@ -475,7 +475,7 @@ def evidence_class_for_group(group: dict, target: Target) -> dict[str, Any]:
     if class_basis and all(is_insn_entry(name) for name in class_basis):
         return {
             "class": "entry",
-            "reason": "coverage gap basis is only riscv/insns entries",
+            "reason": "覆盖率缺口依据仅为 riscv/insns 入口",
             "confidence": "high",
             "entry_file_count": entry_file_count,
             "shared_source_file_count": shared_source_file_count,
@@ -484,7 +484,7 @@ def evidence_class_for_group(group: dict, target: Target) -> dict[str, Any]:
 
     return {
         "class": "mixed",
-        "reason": "mixed or unknown file basis; source review required",
+        "reason": "文件依据混合或未知，需要源码复核",
         "confidence": "low",
         "entry_file_count": entry_file_count,
         "shared_source_file_count": shared_source_file_count,
@@ -529,18 +529,18 @@ def build_candidates(groups: list[dict], focus: str | None, target: Target) -> l
         low_call = short_names(group["low_call_entries"], limit=8)
         evidence = (
             f"{dim}: line {pct(group['line_pct'])}, branch {pct(group['branch_pct'])}, "
-            f"call {pct(group['call_pct'])}, zero entries {group['zero_count']} ({zero}), "
-            f"low-line entries {low_line}, low-branch entries {low}, low-call entries {low_call}"
+            f"call {pct(group['call_pct'])}, 0%入口 {group['zero_count']} ({zero}), "
+            f"低行覆盖入口 {low_line}, 低分支覆盖入口 {low}, 低调用覆盖入口 {low_call}"
         )
         rationale_bits = []
         if group["zero_count"]:
-            rationale_bits.append(f"{group['zero_count']} zero-coverage entries")
+            rationale_bits.append(f"{group['zero_count']} 个 0% 覆盖入口")
         if group.get("line_pct") is not None and group["line_pct"] < low_line_threshold:
-            rationale_bits.append(f"line coverage <{low_line_threshold:g}%")
+            rationale_bits.append(f"行覆盖 <{low_line_threshold:g}%")
         if group.get("branch_pct") is not None and group["branch_pct"] < low_branch_threshold:
-            rationale_bits.append(f"branch coverage <{low_branch_threshold:g}%")
+            rationale_bits.append(f"分支覆盖 <{low_branch_threshold:g}%")
         if group.get("call_pct") is not None and group["call_pct"] < low_call_threshold:
-            rationale_bits.append(f"call coverage <{low_call_threshold:g}%")
+            rationale_bits.append(f"调用覆盖 <{low_call_threshold:g}%")
 
         class_info = evidence_class_for_group(group, target)
         representative_entries, entry_selection_reason = representative_entries_for_group(group)
@@ -726,66 +726,66 @@ def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
     low_branch_count = len(summary.get("low_branch_entries", []))
     low_call_count = len(summary.get("low_call_entries", []))
     top_candidates = summary.get("candidates", [])[:3]
-    print("# Spike coverage summary evidence")
+    print("# Spike 覆盖率汇总证据")
     print()
-    print("## Conclusion")
+    print("## 结论")
     print()
     if top_candidates:
         dims = ", ".join(f"`{candidate['dimension']}`" for candidate in top_candidates)
-        print(f"- Highest-priority coverage gaps are {dims}.")
+        print(f"- 当前优先级最高的覆盖率缺口是 {dims}。")
     else:
-        print("- No ranked coverage gaps matched the selected target/focus.")
+        print("- 当前 target/focus 下没有匹配到可排序的覆盖率缺口。")
     print(
-        f"- Totals: 0% entries={zero_count}, low-line entries={low_line_count}, "
-        f"low-branch entries={low_branch_count}, low-call entries={low_call_count}."
+        f"- 汇总：0% 入口={zero_count}，低行覆盖入口={low_line_count}，"
+        f"低分支覆盖入口={low_branch_count}，低调用覆盖入口={low_call_count}。"
     )
-    print("- This report is coverage evidence only; the agent must still map gaps to architecture scenarios and test points.")
+    print("- 本报告只是覆盖率证据；agent 仍需把缺口映射到架构场景和测试点。")
     print()
-    print("## Data")
+    print("## 数据")
     print()
     print(f"- target: `{target['name']}`")
-    print(f"- dimensions: {len(summary.get('groups', []))}")
-    print(f"- ranked candidates: {len(summary.get('candidates', []))}")
-    print(f"- missing target dimensions: {len(summary.get('missing_entries_by_dimension', {}))}")
+    print(f"- 维度数: {len(summary.get('groups', []))}")
+    print(f"- 已排序候选数: {len(summary.get('candidates', []))}")
+    print(f"- 存在缺失入口的 target 维度数: {len(summary.get('missing_entries_by_dimension', {}))}")
     print()
-    print("## Limits / Next steps")
+    print("## 限制与下一步")
     print()
-    print("- Aggregate gcov line/branch/call data does not prove same-flow path coverage.")
-    print("- Inspect top `.gcov` files and Spike source before proposing concrete tests.")
-    print("- Use single-case increment evidence or path markers before claiming a full execution path was covered.")
+    print("- 汇总 gcov 的 line/branch/call 数据不能证明同一条动态执行流已经覆盖。")
+    print("- 提具体测试点前，要先精查高优先级 `.gcov` 文件和 Spike 源码。")
+    print("- 声称完整路径已覆盖前，需要单 case 增量证据或 path marker。")
     print()
-    print("## Evidence")
+    print("## 证据")
     print()
-    print("## Target")
+    print("## Target 信息")
     print()
     print(f"- name: `{target['name']}`")
     print(f"- title: {target['title']}")
     if target["path"]:
-        print(f"- target file: `{target['path']}`")
+        print(f"- target 文件: `{target['path']}`")
     if target["description"]:
         print(f"- description: {target['description']}")
     if target["spec"].get("profile"):
         print(f"- spec profile: {target['spec']['profile']}")
     if target["scope_in"]:
-        print(f"- scope in: {'; '.join(target['scope_in'])}")
+        print(f"- scope_in: {'; '.join(target['scope_in'])}")
     if target["scope_out"]:
-        print(f"- scope out: {'; '.join(target['scope_out'])}")
+        print(f"- scope_out: {'; '.join(target['scope_out'])}")
     if target["summary_exclude_prefixes"] or target["summary_exclude_regex"]:
         filters = target["summary_exclude_prefixes"] + target["summary_exclude_regex"]
-        print(f"- summary exclusions: {'; '.join(filters)}")
+        print(f"- summary 排除规则: {'; '.join(filters)}")
     if target["source_priority"]:
-        print(f"- source priority: {'; '.join(target['source_priority'])}")
+        print(f"- source 优先级: {'; '.join(target['source_priority'])}")
     print(
-        "- low coverage thresholds: "
+        "- 低覆盖阈值: "
         f"line<{low_line_threshold:g}%, branch<{low_branch_threshold:g}%, call<{low_call_threshold:g}%"
     )
     if target.get("path_analysis"):
         fields = target["path_analysis"].get("path_signature_fields", [])
         if isinstance(fields, list) and fields:
-            print(f"- path signature checklist: {'; '.join(fields)}")
+            print(f"- path signature 检查项: {'; '.join(fields)}")
     print()
 
-    print("## Dimension coverage evidence")
+    print("## 维度覆盖率证据")
     print()
     print(
         "| 维度 | 文件数 | 行覆盖 | 分支覆盖 | 调用覆盖 | 0%入口数 | 0%入口 | "
@@ -812,8 +812,8 @@ def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
         )
 
     def print_candidate_table(title: str, candidates: list[dict], max_rows: int) -> None:
-        print(f"\n## {title} (top {max_rows})")
-        print("| Rank | Score | Class | Class reason | Dimension | Coverage evidence | Rationale | Entry reason | Gate | Representative entries | Missing target entries | Inspect next |")
+        print(f"\n## {title}（前 {max_rows} 项）")
+        print("| 排名 | 分数 | 证据类型 | 类型原因 | 维度 | 覆盖率证据 | 排序理由 | 入口选择原因 | Gate | 代表入口 | 缺失 target 入口 | 下一步精查 |")
         print("|---:|---:|---|---|---|---|---|---|---|---|---|---|")
         for idx, candidate in enumerate(candidates[:max_rows], start=1):
             gate = candidate.get("dimension_gate", {})
@@ -838,7 +838,7 @@ def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
                 )
             )
 
-    print_candidate_table("Ranked coverage evidence", summary["candidates"], top)
+    print_candidate_table("覆盖率证据排序", summary["candidates"], top)
 
     shared_candidates = [
         candidate for candidate in summary["candidates"] if candidate.get("evidence_class") == "shared-path"
@@ -849,17 +849,17 @@ def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
     entry_candidates = [
         candidate for candidate in summary["candidates"] if candidate.get("evidence_class") == "entry"
     ]
-    print_candidate_table("Ranked shared semantic path gaps", shared_candidates, top)
-    print_candidate_table("Ranked mixed entry/shared-review gaps", mixed_candidates, top)
-    print_candidate_table("Ranked entry coverage gaps", entry_candidates, top)
+    print_candidate_table("共享语义路径缺口排序", shared_candidates, top)
+    print_candidate_table("入口/共享路径混合缺口排序", mixed_candidates, top)
+    print_candidate_table("入口覆盖缺口排序", entry_candidates, top)
 
-    print("\n## 0% entries")
+    print("\n## 0% 入口")
     for entry in summary["zero_entries"][:detail_limit]:
         print(f"- `{entry['name']}` lines={entry['lines']} branches={entry['branches']} calls={entry['calls']}")
     if len(summary["zero_entries"]) > detail_limit:
         print(f"- ... (+{len(summary['zero_entries']) - detail_limit})")
 
-    print("\n## Lowest branch entries")
+    print("\n## 最低分支覆盖入口")
     for entry in summary["low_branch_entries"][:detail_limit]:
         print(
             f"- `{entry['name']}` branch={pct(entry['branch_pct'])} line={pct(entry['line_pct'])} call={pct(entry['call_pct'])}"
@@ -867,7 +867,7 @@ def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
     if len(summary["low_branch_entries"]) > detail_limit:
         print(f"- ... (+{len(summary['low_branch_entries']) - detail_limit})")
 
-    print("\n## Lowest call entries")
+    print("\n## 最低调用覆盖入口")
     for entry in summary["low_call_entries"][:detail_limit]:
         print(
             f"- `{entry['name']}` call={pct(entry['call_pct'])} line={pct(entry['line_pct'])} branch={pct(entry['branch_pct'])}"
@@ -876,13 +876,13 @@ def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
         print(f"- ... (+{len(summary['low_call_entries']) - detail_limit})")
 
     if summary.get("missing_entries_by_dimension"):
-        print("\n## Missing target entries")
+        print("\n## target 中存在但快照缺失的入口")
         for dim, missing in list(summary["missing_entries_by_dimension"].items())[:detail_limit]:
             print(f"- {dim}: `{short_names(missing, limit=16)}`")
         if len(summary["missing_entries_by_dimension"]) > detail_limit:
             print(f"- ... (+{len(summary['missing_entries_by_dimension']) - detail_limit})")
     if summary.get("empty_dimensions"):
-        print("\n## Empty dimensions")
+        print("\n## 空维度")
         print("- `" + "`, `".join(summary["empty_dimensions"][:detail_limit]) + "`")
 
 

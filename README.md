@@ -184,10 +184,12 @@ ai_xxx、ai_yyy、ai_zzz。
 
 每个 `.md` 至少要有：
 
-- `Conclusion`: 当前覆盖率结论，哪些地方最缺，哪些证据能/不能用。
-- `Data`: target、输入路径、case 数、runner 状态、覆盖计数等数据。
-- `Evidence`: 具体 `.gcov`、函数、源码行、branch/call、case log、compare 文件。
-- `Limits / Next steps`: 不能证明什么，下一步要 inspect、单 case 增量、path marker，还是交给 `hyptest-workflow`。
+- `结论`: 当前覆盖率结论，哪些地方最缺，哪些证据能/不能用。
+- `数据`: target、输入路径、case 数、runner 状态、覆盖计数等数据。
+- `证据`: 具体 `.gcov`、函数、源码行、branch/call、case log、compare 文件。
+- `限制与下一步`: 不能证明什么，下一步要 inspect、单 case 增量、path marker，还是交给 `hyptest-workflow`。
+
+面向人读的 Markdown 标题和解释文字统一使用中文；JSON key、稳定证据字段名、脚本状态枚举可以保留英文，方便后续脚本和 agent 继续识别。
 
 默认输出路径规则：
 
@@ -403,7 +405,7 @@ python3 scripts/run_case_coverage_matrix.py \
 MISSING_ELF、RUNNER_ERROR、MARKER_MISMATCH、TIMEOUT 只能作为诊断线索；
 `pass-counter-evidence-scope-review-required` 先按 target scope 判断，不要直接算 MemBlock non-H 正向证据。
 请结合 Spike 源码和 .gcov still-zero/entry/header movement，输出还缺哪些高质量测试场景、测试点、observable、gate note 和 hyptest-workflow handoff。
-请把最终分析保存成 $REPORT_DIR/testpoint_plan.md，报告必须包含 Conclusion、Data、Evidence、Limits / Next steps，并在 Data/Evidence 里链接 $RUN_DIR/case_matrix_all。
+请把最终分析保存成 $REPORT_DIR/testpoint_plan.md，报告必须包含 结论、数据、证据、限制与下一步，并在数据/证据里链接 $RUN_DIR/case_matrix_all。
 不要直接写 case。
 ```
 

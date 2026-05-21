@@ -503,37 +503,37 @@ def print_markdown(result: dict[str, Any], limit: int) -> None:
         int(status_counts.get(name, 0))
         for name in ("decreased-or-reset", "missing-after-event", "not-comparable-counter-format", "missing-before-event")
     )
-    print("# Single-case gcov increment evidence")
+    print("# 单 case gcov 增量证据")
     print()
-    print("## Conclusion")
+    print("## 结论")
     print()
-    print(f"- Counter movement events: {changed}; invalid/unsafe evidence events: {invalid}.")
+    print(f"- counter 发生移动的事件数: {changed}；无效/不安全证据事件数: {invalid}。")
     if result.get("requirements") and result["requirements"].get("requirement_count"):
         req = result["requirements"]
         print(
-            f"- Required evidence: all_required_passed={req['all_required_passed']} "
-            f"({req['passed']}/{req['requirement_count']} passed, failed={req['failed']}, missing={req['missing']})."
+            f"- 必需证据点: all_required_passed={req['all_required_passed']} "
+            f"（通过 {req['passed']}/{req['requirement_count']}，失败={req['failed']}，缺失={req['missing']}）。"
         )
     else:
-        print("- No explicit must-pass requirements were provided; movement is evidence, not path proof.")
-    print("- Positive path claims still require source review, target PC/instruction evidence, and target-scope checks.")
+        print("- 没有提供显式 must-pass 要求；counter movement 是证据，但不是路径证明。")
+    print("- 正向路径结论仍需要源码复核、目标 PC/指令证据和 target scope 检查。")
     print()
-    print("## Data")
+    print("## 数据")
     print()
-    print(f"- files compared: {len(result.get('files', []))}")
+    print(f"- 比较文件数: {len(result.get('files', []))}")
     print(f"- missing_before_files: {len(result.get('missing_before_files', []))}")
     print(f"- missing_after_files: {len(result.get('missing_after_files', []))}")
     print(f"- key_mode: `{result['key_mode']}`")
     print()
-    print("## Limits / Next steps")
+    print("## 限制与下一步")
     print()
-    print("- Counter deltas are not full path proof unless required points all pass in a tiny isolated case.")
-    print("- Invalid statuses such as decreased/reset, missing events/files, or not-comparable counter format must be explained first.")
-    print("- Add `--require-event` or `--requirements-json` for must-pass evidence before upgrading path confidence.")
+    print("- counter delta 不是完整路径证明，除非 tiny isolated case 的必需证据点全部通过。")
+    print("- `decreased/reset`、缺失事件/文件、不可比较 counter 格式等无效状态必须先解释。")
+    print("- 提升 path confidence 前，请增加 `--require-event` 或 `--requirements-json` 作为 must-pass 证据。")
     print()
-    print("## Evidence")
+    print("## 证据")
     print()
-    print("## Single-case gcov increment evidence")
+    print("## 单 case gcov 增量证据")
     print()
     print(f"- before_dir: `{result['before_dir']}`")
     print(f"- after_dir: `{result['after_dir']}`")
@@ -544,15 +544,15 @@ def print_markdown(result: dict[str, Any], limit: int) -> None:
         print("- missing before files: `" + "`, `".join(result["missing_before_files"]) + "`")
     if result.get("missing_after_files"):
         print("- missing after files: `" + "`, `".join(result["missing_after_files"]) + "`")
-    print("- meaning: this is counter-delta evidence, not full path coverage by itself")
-    print("- counter format: branch/call increment proof needs numeric counts, e.g. gcov generated with `-b -c`")
+    print("- 含义: 这是 counter-delta 证据，本身不是完整 path coverage 证明")
+    print("- counter 格式: branch/call 增量证明需要数字计数，例如用 `gcov -b -c` 生成")
     print(
-        "- invalid for path confirmation: `decreased-or-reset`, `missing-after-event`, "
+        "- 不能用于正向路径确认的状态: `decreased-or-reset`, `missing-after-event`, "
         "`not-comparable-counter-format`, and unresolved missing files/events"
     )
     print()
 
-    print("## Summary")
+    print("## 汇总")
     print()
     for status, count in sorted(result["summary"]["status_counts"].items()):
         print(f"- {status}: {count}")
@@ -566,7 +566,7 @@ def print_markdown(result: dict[str, Any], limit: int) -> None:
         print(f"- counter formats: {', '.join(format_bits)}")
     print()
     if result["summary"].get("possible_key_drift"):
-        print("## Possible key drift")
+        print("## 可能的 key drift")
         print()
         for item in result["summary"]["possible_key_drift"][:limit]:
             print(
@@ -582,14 +582,14 @@ def print_markdown(result: dict[str, Any], limit: int) -> None:
 
     if result.get("requirements"):
         req = result["requirements"]
-        print("## Required evidence points")
+        print("## 必需证据点")
         print()
         print(f"- all_required_passed: {req['all_required_passed']}")
         print(f"- passed: {req['passed']} / {req['requirement_count']}")
         print(f"- failed: {req['failed']}")
         print(f"- missing: {req['missing']}")
         print()
-        print("| ID | Status | Requirement | Matched statuses |")
+        print("| ID | 状态 | 要求 | 匹配状态 |")
         print("|---|---|---|---|")
         for item in req["items"][:limit]:
             requirement = json.dumps(item["requirement"], ensure_ascii=False, sort_keys=True)
@@ -598,13 +598,13 @@ def print_markdown(result: dict[str, Any], limit: int) -> None:
         print()
 
     for title, statuses in (
-        ("Newly covered", {"newly-covered"}),
-        ("Increased", {"increased"}),
-        ("Decreased or reset", {"decreased-or-reset"}),
-        ("Missing after", {"missing-after-event"}),
-        ("Missing before", {"missing-before-event"}),
-        ("Not comparable counter format", {"not-comparable-counter-format"}),
-        ("Still zero", {"still-zero"}),
+        ("新增覆盖", {"newly-covered"}),
+        ("计数增加", {"increased"}),
+        ("计数减少或重置", {"decreased-or-reset"}),
+        ("after 缺失", {"missing-after-event"}),
+        ("before 缺失", {"missing-before-event"}),
+        ("counter 格式不可比较", {"not-comparable-counter-format"}),
+        ("仍为 0", {"still-zero"}),
     ):
         rows = [item for item in result["deltas"] if item["status"] in statuses]
         print(f"## {title}")
@@ -613,7 +613,7 @@ def print_markdown(result: dict[str, Any], limit: int) -> None:
             print("- none")
             print()
             continue
-        print("| File | Function | Kind | Line | Ordinal | Before | After | Formats | Delta | Source |")
+        print("| 文件 | 函数 | 类型 | 行 | Ordinal | Before | After | 格式 | Delta | Source |")
         print("|---|---|---|---:|---:|---:|---:|---|---:|---|")
         for item in rows[:limit]:
             source = str(item["source_code"]).replace("|", "\\|")

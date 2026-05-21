@@ -14,10 +14,10 @@ mkdir -p "$OUT_DIR"
 
 require_report_sections() {
   local report="$1"
-  grep -q "## Conclusion" "$report"
-  grep -q "## Data" "$report"
-  grep -q "## Evidence" "$report"
-  grep -q "## Limits / Next steps" "$report"
+  grep -q "## 结论" "$report"
+  grep -q "## 数据" "$report"
+  grep -q "## 证据" "$report"
+  grep -q "## 限制与下一步" "$report"
 }
 
 python3 scripts/validate_target.py targets/TEMPLATE.json
@@ -33,9 +33,9 @@ python3 scripts/analyze_spike_gcov.py \
   --top 3 \
   --json-out "$OUT_DIR/summary.json" \
   --markdown-out "$OUT_DIR/summary.md"
-grep -q "Ranked mixed entry/shared-review gaps" "$OUT_DIR/summary.md"
-grep -q "Class reason" "$OUT_DIR/summary.md"
-grep -q "low-call entries" "$OUT_DIR/summary.md"
+grep -q "入口/共享路径混合缺口排序" "$OUT_DIR/summary.md"
+grep -q "类型原因" "$OUT_DIR/summary.md"
+grep -q "低调用覆盖入口" "$OUT_DIR/summary.md"
 require_report_sections "$OUT_DIR/summary.md"
 
 cat > "$OUT_DIR/synthetic_target.json" <<'EOF'
@@ -137,9 +137,9 @@ python3 scripts/analyze_spike_gcov.py \
   --json-out "$OUT_DIR/synth_summary.json" \
   --markdown-out "$OUT_DIR/synth_summary.md"
 grep -q "manual device path" "$OUT_DIR/synth_summary.md"
-grep -q "low-call entries" "$OUT_DIR/synth_summary.md"
+grep -q "低调用覆盖入口" "$OUT_DIR/synth_summary.md"
 grep -q "manual/special-run synthetic gate" "$OUT_DIR/synth_summary.md"
-grep -q "Missing target entries" "$OUT_DIR/synth_summary.md"
+grep -q "target 中存在但快照缺失的入口" "$OUT_DIR/synth_summary.md"
 python3 scripts/inspect_gcov_lines.py \
   --gcov-dir "$OUT_DIR" \
   --source-root "$OUT_DIR" \
@@ -173,7 +173,7 @@ python3 scripts/inspect_gcov_lines.py \
   --max-functions 2 \
   --json-out "$OUT_DIR/line.json" \
   --markdown-out "$OUT_DIR/line.md"
-grep -q "excluded by filters" "$OUT_DIR/line.md"
+grep -q "被过滤规则排除" "$OUT_DIR/line.md"
 require_report_sections "$OUT_DIR/line.md"
 
 python3 scripts/build_handoff_packet.py \
@@ -271,7 +271,7 @@ python3 scripts/analyze_path_markers.py \
   --ordered \
   --markdown-out "$OUT_DIR/marker_weak.md"
 grep -q "json-marker-sequence-observed-weak" "$OUT_DIR/marker_weak.md"
-grep -q "Weak JSON" "$OUT_DIR/marker_weak.md"
+grep -q "弱 JSON" "$OUT_DIR/marker_weak.md"
 require_report_sections "$OUT_DIR/marker_weak.md"
 cat > "$OUT_DIR/marker_grouped.jsonl" <<'EOF'
 {"access_id":"a1","seq":1,"markers":["mem.access.scalar_load"]}
@@ -315,8 +315,8 @@ python3 scripts/compare_gcov_snapshots.py \
 grep -q "key_mode: \`stable-line\`" "$OUT_DIR/compare.md"
 grep -q "decreased-or-reset" "$OUT_DIR/compare.md"
 grep -q "missing-after-event" "$OUT_DIR/compare.md"
-grep -q "counter formats" "$OUT_DIR/compare.md"
-grep -q "Required evidence points" "$OUT_DIR/compare.md"
+grep -q "counter 格式" "$OUT_DIR/compare.md"
+grep -q "必需证据点" "$OUT_DIR/compare.md"
 grep -q "all_required_passed: False" "$OUT_DIR/compare.md"
 require_report_sections "$OUT_DIR/compare.md"
 
@@ -353,7 +353,7 @@ python3 scripts/run_case_coverage_matrix.py \
   --command-template "bash -lc 'echo PASSED {case_name}'" \
   --out-dir "$OUT_DIR/case_matrix_fake" > "$OUT_DIR/case_matrix_fake.stdout"
 grep -q "runner=PASS" "$OUT_DIR/case_matrix_fake.stdout"
-grep -q "Runner status" "$OUT_DIR/case_matrix_fake/summary.md"
+grep -q "Runner 状态" "$OUT_DIR/case_matrix_fake/summary.md"
 grep -q "ai_probe_a" "$OUT_DIR/case_matrix_fake/summary.md"
 require_report_sections "$OUT_DIR/case_matrix_fake/summary.md"
 python3 scripts/run_case_coverage_matrix.py \
@@ -367,7 +367,7 @@ python3 scripts/run_case_coverage_matrix.py \
   --out-dir "$OUT_DIR/case_matrix_dry" > "$OUT_DIR/case_matrix_dry.stdout"
 grep -q "dry_run=true" "$OUT_DIR/case_matrix_dry.stdout"
 grep -q "selected_case_count=1" "$OUT_DIR/case_matrix_dry.stdout"
-grep -q "Unresolved gcno hints" "$OUT_DIR/case_matrix_dry/summary.md"
+grep -q "未解析的 gcno hint" "$OUT_DIR/case_matrix_dry/summary.md"
 require_report_sections "$OUT_DIR/case_matrix_dry/summary.md"
 
 cat > "$OUT_DIR/fake_spike.sh" <<'EOF'

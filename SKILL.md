@@ -54,16 +54,19 @@ Every coverage task must leave a Markdown artifact on disk, not only terminal te
 Every Markdown report must include these sections near the top:
 
 ```text
-Conclusion: what the current coverage situation means
-Data: target, input paths, case counts, coverage counts, runner statuses
-Evidence: exact files/functions/lines/branches/calls/case logs used
-Limits / Next steps: what is not proven and what to inspect or run next
+结论：当前覆盖率情况说明了什么
+数据：target、输入路径、case 数、覆盖计数、runner 状态等
+证据：具体文件/函数/源码行/branch/call/case log/compare 文件
+限制与下一步：当前证据不能证明什么，下一步要 inspect、单 case 增量还是 path marker
 ```
 
 When a bundled script supports both `--markdown` and `--markdown-out`, prefer
 `--markdown-out` for durable reports. Use `--markdown` only when the user also
 wants terminal output. In the final response, mention the exact `.md` path that
 contains the conclusion, evidence, and data.
+
+Write human-readable Markdown report headings and explanatory prose in Chinese.
+Machine-readable JSON keys and stable evidence field names may remain English.
 
 ## Output Path Policy
 
@@ -103,7 +106,7 @@ For one-click per-case matrix runs, put the full run directory under
 JSON, logs, and before/after snapshots stay together there. If the user also
 wants a polished final analysis, save `testpoint_plan.md` under
 `cov_doc/reports/<target_name>/<run_tag>/` and link back to the matrix run dir in
-the Data/Evidence section.
+the `数据` / `证据` section.
 
 Choose `<target_name>` from the target JSON `name` field, such as
 `memblock_non_h`. Choose `<run_tag>` from the current date plus purpose, for
