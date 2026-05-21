@@ -50,6 +50,7 @@
     "purpose": "Optional path-aware evidence policy. Use this to describe how the agent should report and prove execution-flow coverage when gcov branch/call coverage is not enough.",
     "confidence_levels": [
       "confirmed-not-executed",
+      "counter-increment-observed",
       "single-case-increment-confirmed",
       "edge-covered-path-unknown",
       "needs-path-instrumentation",
@@ -86,7 +87,8 @@
       ],
       "interpretation": [
         "If a required edge/call stays zero, the path is confirmed not executed.",
-        "If all required counters increase in a tiny single-purpose case, mark single-case-increment-confirmed.",
+        "If required counters increase but isolated-case/log/profile evidence is incomplete, mark counter-increment-observed instead of single-case-increment-confirmed.",
+        "If all required counters increase in a tiny single-purpose case and Spike log/profile evidence confirms the target instruction, mark single-case-increment-confirmed.",
         "If edges are covered only in aggregate, mark edge-covered-path-unknown."
       ]
     }

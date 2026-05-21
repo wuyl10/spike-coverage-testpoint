@@ -20,7 +20,9 @@
         "Labels path confidence instead of treating aggregate branch coverage as full path coverage.",
         "Does not write or modify hyptest cases.",
         "Includes a structured hyptest-workflow handoff packet for implementation.",
-        "Fills handoff semantic fields by agent reasoning rather than leaving raw script TODOs in the final answer."
+        "Fills handoff semantic fields by agent reasoning rather than leaving raw script TODOs in the final answer.",
+        "Does not leave raw TODO(agent) placeholders in the final user-facing handoff.",
+        "Separates entry coverage gaps from shared semantic path gaps."
       ]
     },
     {
@@ -116,10 +118,11 @@
         "Uses the structured hyptest-workflow handoff packet format.",
         "Includes implementation_owner: hyptest-workflow.",
         "Includes target_file, coverage evidence, expected observable, duplicate-search terms, and gate note.",
-        "Includes path_confidence and path_signature fields when target path_analysis is available.",
+        "Includes path_confidence, path_signature, evidence_class, and profile_gate fields when target path_analysis is available.",
         "May use build_handoff_packet.py for the skeleton but does not treat skeleton TODOs as final analysis.",
         "States that hyptest-workflow must still do duplicate checks and profile/gate checks.",
-        "Does not modify hyptest source files."
+        "Does not modify hyptest source files.",
+        "Includes profile_gate fields before recommending any default-gate implementation."
       ]
     },
     {
@@ -133,11 +136,12 @@
         "Uses target path_analysis as guardrails and does not treat it as a complete MemBlock path matrix.",
         "Does not invent path combinations from predeclared axes; derives path signatures from source/gcov evidence.",
         "Explains that aggregate branch/call coverage is not full path coverage.",
-        "Defines confidence labels such as confirmed-not-executed, single-case-increment-confirmed, edge-covered-path-unknown, and needs-path-instrumentation.",
+        "Defines confidence labels including confirmed-not-executed, counter-increment-observed, single-case-increment-confirmed, edge-covered-path-unknown, and needs-path-instrumentation, and explains when to downgrade.",
         "Uses or recommends compare_gcov_snapshots.py for before/after .gcov deltas.",
         "Uses or recommends analyze_path_markers.py for per-instruction/access marker logs.",
         "Keeps path marker instrumentation gated to coverage Spike and does not require normal Spike behavior changes.",
-        "Does not write hyptest cases unless separately requested."
+        "Does not write hyptest cases unless separately requested.",
+        "Treats marker-sequence-observed as marker evidence and text-marker-sequence-observed-weak as weak evidence, not final proof by itself."
       ]
     }
   ]

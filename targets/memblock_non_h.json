@@ -428,6 +428,7 @@
     "purpose": "MemBlock path-aware coverage model for deciding whether a full execution flow, not only individual gcov edges, has run.",
     "confidence_levels": [
       "confirmed-not-executed",
+      "counter-increment-observed",
       "single-case-increment-confirmed",
       "edge-covered-path-unknown",
       "needs-path-instrumentation",
@@ -563,6 +564,7 @@
       ],
       "interpretation": [
         "If any must-pass line/branch/call remains zero, the full execution flow is confirmed-not-executed.",
+        "If counters increase but the run is not tiny/isolated or the Spike log does not confirm the target instruction, mark counter-increment-observed.",
         "If all must-pass counters increase during a tiny single-purpose run and Spike log confirms the target instruction, mark single-case-increment-confirmed.",
         "If counters were only covered in aggregate by a suite, mark edge-covered-path-unknown.",
         "If internal path correlation cannot be proven by gcov increment plus log, mark needs-path-instrumentation and propose path markers."

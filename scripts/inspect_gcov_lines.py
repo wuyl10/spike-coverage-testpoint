@@ -39,6 +39,12 @@ class FunctionBlock:
 
 
 @dataclass
+class ExcludedCounts:
+    functions: int = 0
+    events: int = 0
+
+
+@dataclass
 class FileReport:
     gcov_file: str
     source: str | None
@@ -46,6 +52,7 @@ class FileReport:
     uncovered_lines: int
     never_branches: int
     never_calls: int
+    excluded_counts: ExcludedCounts
 
 
 FUNCTION_RE = re.compile(
@@ -142,6 +149,7 @@ def parse_gcov(path: Path) -> FileReport:
         uncovered_lines=sum(1 for fn in functions for ev in fn.events if ev.kind == "uncovered-line"),
         never_branches=sum(1 for fn in functions for ev in fn.events if ev.kind in {"branch-never", "branch-taken-0"}),
         never_calls=sum(1 for fn in functions for ev in fn.events if ev.kind in {"call-never", "call-returned-0"}),
+        excluded_counts=ExcludedCounts(),
     )
 
 
@@ -214,6 +222,8 @@ def merge_duplicate_functions(functions: list[FunctionBlock]) -> list[FunctionBl
 
 
 def apply_exclude_regex(report: FileReport, patterns: list[re.Pattern[str]]) -> FileReport:
+    excluded_counts = ExcludedCounts()
+
     def rebuild(functions: list[FunctionBlock]) -> FileReport:
         return FileReport(
             gcov_file=report.gcov_file,
@@ -222,6 +232,7 @@ def apply_exclude_regex(report: FileReport, patterns: list[re.Pattern[str]]) -> 
             uncovered_lines=sum(1 for fn in functions for ev in fn.events if ev.kind == "uncovered-line"),
             never_branches=sum(1 for fn in functions for ev in fn.events if ev.kind in {"branch-never", "branch-taken-0"}),
             never_calls=sum(1 for fn in functions for ev in fn.events if ev.kind in {"call-never", "call-returned-0"}),
+            excluded_counts=excluded_counts,
         )
 
     if not patterns:
@@ -231,12 +242,15 @@ def apply_exclude_regex(report: FileReport, patterns: list[re.Pattern[str]]) -> 
     for fn in report.functions:
         haystack = function_identity_haystack(fn)
         if any(pattern.search(haystack) for pattern in patterns):
+            excluded_counts.functions += 1
+            excluded_counts.events += len(fn.events)
             continue
-        filtered_events = [
-            event
-            for event in fn.events
-            if not any(pattern.search(event_haystack(event)) for pattern in patterns)
-        ]
+        filtered_events = []
+        for event in fn.events:
+            if any(pattern.search(event_haystack(event)) for pattern in patterns):
+                excluded_counts.events += 1
+            else:
+                filtered_events.append(event)
         if filtered_events or (fn.called == 0 and not fn.events):
             functions.append(
                 FunctionBlock(
@@ -370,6 +384,10 @@ def print_markdown(
         print(f"- uncovered lines: {report.uncovered_lines}")
         print(f"- never branches: {report.never_branches}")
         print(f"- never calls: {report.never_calls}")
+        print(
+            "- excluded by filters: "
+            f"functions={report.excluded_counts.functions}, events={report.excluded_counts.events}"
+        )
         print()
 
         ranked = sorted(

@@ -16,12 +16,16 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
 
 GCOV_SOURCE_LINE_RE = re.compile(r"^\s*(?P<count>[^:]+):\s*(?P<line>\d+):(?P<code>.*)$")
+FUNCTION_RE = re.compile(
+    r"function\s+(?P<name>\S+)\s+called\s+(?P<called>\d+)\s+returned\s+(?P<returned>\S+)\s+blocks executed\s+(?P<blocks>\S+)"
+)
 BRANCH_RE = re.compile(r"^\s*branch\s+(?P<num>\d+)\s+(?P<rest>.*)$")
 CALL_RE = re.compile(r"^\s*call\s+(?P<num>\d+)\s+(?P<rest>.*)$")
 
@@ -29,6 +33,8 @@ CALL_RE = re.compile(r"^\s*call\s+(?P<num>\d+)\s+(?P<rest>.*)$")
 @dataclass(frozen=True)
 class EventKey:
     file: str
+    function: str | None
+    mangled_name: str | None
     kind: str
     source_line: int | None
     ordinal: int | None
@@ -38,6 +44,8 @@ class EventKey:
 @dataclass
 class Event:
     file: str
+    function: str | None
+    mangled_name: str | None
     kind: str
     source_line: int | None
     ordinal: int | None
@@ -49,6 +57,8 @@ class Event:
 @dataclass
 class EventDelta:
     file: str
+    function: str | None
+    mangled_name: str | None
     kind: str
     source_line: int | None
     ordinal: int | None
@@ -57,6 +67,27 @@ class EventDelta:
     after: int | None
     delta: int | None
     status: str
+
+
+_DEMANGLE_CACHE: dict[str, str] = {}
+
+
+def demangle(name: str) -> str:
+    if name in _DEMANGLE_CACHE:
+        return _DEMANGLE_CACHE[name]
+    try:
+        proc = subprocess.run(
+            ["c++filt", name],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        result = proc.stdout.strip() or name
+    except OSError:
+        result = name
+    _DEMANGLE_CACHE[name] = result
+    return result
 
 
 def parse_count_token(token: str) -> int | None:
@@ -93,6 +124,8 @@ def excluded(event: Event, patterns: list[re.Pattern[str]]) -> bool:
         [
             event.file,
             event.kind,
+            event.function or "",
+            event.mangled_name or "",
             str(event.source_line or ""),
             str(event.ordinal or ""),
             event.source_code,
@@ -109,8 +142,16 @@ def parse_gcov(path: Path, display_name: str, patterns: list[re.Pattern[str]]) -
 
     last_source_line: int | None = None
     last_source_code = ""
+    current_function = "<file-scope>"
+    current_mangled: str | None = None
 
     for line in path.read_text(errors="replace").splitlines():
+        function_match = FUNCTION_RE.match(line)
+        if function_match:
+            current_mangled = function_match.group("name")
+            current_function = demangle(current_mangled)
+            continue
+
         src_match = GCOV_SOURCE_LINE_RE.match(line)
         if src_match:
             last_source_line = int(src_match.group("line"))
@@ -119,6 +160,8 @@ def parse_gcov(path: Path, display_name: str, patterns: list[re.Pattern[str]]) -
             if count is not None:
                 event = Event(
                     file=display_name,
+                    function=current_function,
+                    mangled_name=current_mangled,
                     kind="line",
                     source_line=last_source_line,
                     ordinal=None,
@@ -130,6 +173,8 @@ def parse_gcov(path: Path, display_name: str, patterns: list[re.Pattern[str]]) -
                     events[
                         EventKey(
                             file=display_name,
+                            function=event.function,
+                            mangled_name=event.mangled_name,
                             kind=event.kind,
                             source_line=event.source_line,
                             ordinal=event.ordinal,
@@ -142,6 +187,8 @@ def parse_gcov(path: Path, display_name: str, patterns: list[re.Pattern[str]]) -
         if branch_match:
             event = Event(
                 file=display_name,
+                function=current_function,
+                mangled_name=current_mangled,
                 kind="branch",
                 source_line=last_source_line,
                 ordinal=int(branch_match.group("num")),
@@ -153,6 +200,8 @@ def parse_gcov(path: Path, display_name: str, patterns: list[re.Pattern[str]]) -
                 events[
                     EventKey(
                         file=display_name,
+                        function=event.function,
+                        mangled_name=event.mangled_name,
                         kind=event.kind,
                         source_line=event.source_line,
                         ordinal=event.ordinal,
@@ -165,6 +214,8 @@ def parse_gcov(path: Path, display_name: str, patterns: list[re.Pattern[str]]) -
         if call_match:
             event = Event(
                 file=display_name,
+                function=current_function,
+                mangled_name=current_mangled,
                 kind="call",
                 source_line=last_source_line,
                 ordinal=int(call_match.group("num")),
@@ -176,6 +227,8 @@ def parse_gcov(path: Path, display_name: str, patterns: list[re.Pattern[str]]) -
                 events[
                     EventKey(
                         file=display_name,
+                        function=event.function,
+                        mangled_name=event.mangled_name,
                         kind=event.kind,
                         source_line=event.source_line,
                         ordinal=event.ordinal,
@@ -221,12 +274,28 @@ def compare_events(
         before_event = before.get(key)
         after_event = after.get(key)
         if after_event is None:
+            before_count = before_event.count if before_event else None
+            deltas.append(
+                EventDelta(
+                    file=key.file,
+                    function=key.function,
+                    mangled_name=key.mangled_name,
+                    kind=key.kind,
+                    source_line=key.source_line,
+                    ordinal=key.ordinal,
+                    source_code=key.source_code,
+                    before=before_count,
+                    after=None,
+                    delta=None,
+                    status="missing-after-event",
+                )
+            )
             continue
 
         before_count = before_event.count if before_event else (0 if missing_before_zero else None)
         after_count = after_event.count
         delta: int | None = None
-        status = "unknown"
+        status = "missing-before-event" if before_event is None else "unknown"
 
         if before_count is not None and after_count is not None:
             delta = after_count - before_count
@@ -234,16 +303,20 @@ def compare_events(
                 status = "newly-covered"
             elif after_count > before_count:
                 status = "increased"
+            elif after_count < before_count:
+                status = "decreased-or-reset"
             elif after_count == 0:
                 status = "still-zero"
             else:
                 status = "unchanged-covered"
-        elif after_count == 0:
+        elif before_event is not None and after_count == 0:
             status = "still-zero"
 
         deltas.append(
             EventDelta(
                 file=key.file,
+                function=key.function,
+                mangled_name=key.mangled_name,
                 kind=key.kind,
                 source_line=key.source_line,
                 ordinal=key.ordinal,
@@ -261,22 +334,37 @@ def rank_delta(delta: EventDelta) -> tuple[int, str, int, int]:
     status_rank = {
         "newly-covered": 0,
         "increased": 1,
-        "still-zero": 2,
-        "unchanged-covered": 3,
-        "unknown": 4,
+        "decreased-or-reset": 2,
+        "missing-after-event": 3,
+        "missing-before-event": 4,
+        "still-zero": 5,
+        "unchanged-covered": 6,
+        "unknown": 7,
     }.get(delta.status, 5)
     kind_rank = {"branch": 0, "call": 1, "line": 2}.get(delta.kind, 3)
     return (status_rank, delta.file, delta.source_line or -1, kind_rank)
 
 
-def summarize(deltas: list[EventDelta]) -> dict[str, Any]:
+def summarize(
+    deltas: list[EventDelta],
+    missing_before_files: list[str] | None = None,
+    missing_after_files: list[str] | None = None,
+) -> dict[str, Any]:
     counts: dict[str, int] = {}
     by_kind: dict[str, dict[str, int]] = {}
     for delta in deltas:
         counts[delta.status] = counts.get(delta.status, 0) + 1
         by_kind.setdefault(delta.kind, {})
         by_kind[delta.kind][delta.status] = by_kind[delta.kind].get(delta.status, 0) + 1
-    return {"status_counts": counts, "kind_status_counts": by_kind}
+    file_status_counts = {
+        "missing-before-file": len(missing_before_files or []),
+        "missing-after-file": len(missing_after_files or []),
+    }
+    return {
+        "status_counts": counts,
+        "kind_status_counts": by_kind,
+        "file_status_counts": file_status_counts,
+    }
 
 
 def print_markdown(result: dict[str, Any], limit: int) -> None:
@@ -286,18 +374,29 @@ def print_markdown(result: dict[str, Any], limit: int) -> None:
     print(f"- after_dir: `{result['after_dir']}`")
     if result.get("target"):
         print(f"- target: `{result['target']}`")
+    if result.get("missing_before_files"):
+        print("- missing before files: `" + "`, `".join(result["missing_before_files"]) + "`")
+    if result.get("missing_after_files"):
+        print("- missing after files: `" + "`, `".join(result["missing_after_files"]) + "`")
     print("- meaning: this is counter-delta evidence, not full path coverage by itself")
+    print("- invalid for path confirmation: `decreased-or-reset`, `missing-after-event`, and unresolved missing files/events")
     print()
 
     print("## Summary")
     print()
     for status, count in sorted(result["summary"]["status_counts"].items()):
         print(f"- {status}: {count}")
+    for status, count in sorted(result["summary"].get("file_status_counts", {}).items()):
+        if count:
+            print(f"- {status}: {count}")
     print()
 
     for title, statuses in (
         ("Newly covered", {"newly-covered"}),
         ("Increased", {"increased"}),
+        ("Decreased or reset", {"decreased-or-reset"}),
+        ("Missing after", {"missing-after-event"}),
+        ("Missing before", {"missing-before-event"}),
         ("Still zero", {"still-zero"}),
     ):
         rows = [item for item in result["deltas"] if item["status"] in statuses]
@@ -307,13 +406,14 @@ def print_markdown(result: dict[str, Any], limit: int) -> None:
             print("- none")
             print()
             continue
-        print("| File | Kind | Line | Ordinal | Before | After | Delta | Source |")
-        print("|---|---|---:|---:|---:|---:|---:|---|")
+        print("| File | Function | Kind | Line | Ordinal | Before | After | Delta | Source |")
+        print("|---|---|---|---:|---:|---:|---:|---:|---|")
         for item in rows[:limit]:
             source = str(item["source_code"]).replace("|", "\\|")
             print(
-                "| {file} | {kind} | {line} | {ordinal} | {before} | {after} | {delta} | `{source}` |".format(
+                "| {file} | `{function}` | {kind} | {line} | {ordinal} | {before} | {after} | {delta} | `{source}` |".format(
                     file=item["file"],
+                    function=(item.get("function") or "-").replace("|", "\\|"),
                     kind=item["kind"],
                     line=item["source_line"] if item["source_line"] is not None else "-",
                     ordinal=item["ordinal"] if item["ordinal"] is not None else "-",
@@ -350,13 +450,17 @@ def main() -> int:
 
     before_events: dict[EventKey, Event] = {}
     after_events: dict[EventKey, Event] = {}
+    missing_before: list[str] = []
     missing_after: list[str] = []
     for name in files:
-        before_events.update(parse_gcov(args.before_dir / name, name, patterns))
-        parsed_after = parse_gcov(args.after_dir / name, name, patterns)
-        if not parsed_after:
+        before_path = args.before_dir / name
+        after_path = args.after_dir / name
+        if not before_path.exists():
+            missing_before.append(name)
+        if not after_path.exists():
             missing_after.append(name)
-        after_events.update(parsed_after)
+        before_events.update(parse_gcov(before_path, name, patterns))
+        after_events.update(parse_gcov(after_path, name, patterns))
 
     deltas = compare_events(before_events, after_events, args.missing_before_zero)
     deltas = [delta for delta in deltas if event_matches_focus(delta, args.focus)]
@@ -367,13 +471,15 @@ def main() -> int:
         "after_dir": str(args.after_dir),
         "target": str(args.target) if args.target else None,
         "files": files,
+        "missing_before_files": missing_before,
         "missing_after_files": missing_after,
-        "summary": summarize(deltas),
+        "summary": summarize(deltas, missing_before, missing_after),
         "deltas": [asdict(delta) for delta in deltas],
         "interpretation_rule": (
             "newly-covered/increased confirms counter movement for a required edge/call/line in this "
             "isolated run. If all required points move in a tiny single-purpose case, confidence is high; "
-            "otherwise mark path-correlation-unknown or use path markers."
+            "otherwise mark edge-covered-path-unknown or use path markers. decreased-or-reset and missing "
+            "events/files are invalid for positive path confirmation until explained."
         ),
     }
 

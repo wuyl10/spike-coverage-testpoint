@@ -9,7 +9,8 @@ Strong evidence:
 
 - A required line/branch/call moved from zero to nonzero.
 - A required line/branch/call increased during an isolated run.
-- Spike log confirms the target guest instruction executed.
+- Spike log, commit log, target PC, or equivalent run evidence confirms the
+  target guest instruction executed.
 
 Limits:
 
@@ -18,6 +19,8 @@ Limits:
   instructions could have contributed different counter increments.
 - It cannot prove a path through logic that has no gcov-visible counter unless
   path markers are added.
+- It cannot support positive confirmation if required events disappear from the
+  after snapshot, counters decrease/reset, or required files are missing.
 
 ## Preferred Workflow
 
@@ -92,13 +95,26 @@ python3 scripts/compare_gcov_snapshots.py \
 ## Interpretation
 
 - `confirmed-not-executed`: any must-pass point is `still-zero`.
-- `single-case-increment-confirmed`: all must-pass points are
-  `newly-covered` or `increased` in a tiny single-purpose run, and the Spike log
-  confirms the target instruction.
+- `counter-increment-observed`: required points are `newly-covered` or
+  `increased`, but the run is not isolated enough, target PC/instruction
+  evidence is missing, profile evidence is incomplete, or not all required
+  points were checked.
+- `single-case-increment-confirmed`: all must-pass points are `newly-covered`
+  or `increased` in a tiny single-purpose run, Spike log/PC evidence confirms
+  the target instruction, and no required point/file is missing or
+  `decreased-or-reset`.
 - `edge-covered-path-unknown`: counters are covered in aggregate, but no
   controlled single-case increment or marker log proves same-flow correlation.
 - `needs-path-instrumentation`: the desired path cannot be correlated with
   gcov counters and logs; use path markers.
+
+Invalid for positive path confirmation until explained:
+
+- `decreased-or-reset`
+- `missing-after-event`
+- unresolved `missing-before-event`
+- `missing-before-file`
+- `missing-after-file`
 
 ## Good Final Evidence
 

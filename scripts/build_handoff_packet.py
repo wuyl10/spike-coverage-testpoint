@@ -22,6 +22,10 @@ def short_name(path: str) -> str:
     return name
 
 
+def needs_agent(reason: str) -> str:
+    return f"needs source confirmation: {reason}"
+
+
 def candidate_matches(candidate: dict[str, Any], selected: set[str]) -> bool:
     if not selected:
         return True
@@ -131,6 +135,36 @@ def duplicate_terms(target: dict[str, Any], dimension: str) -> list[str]:
     return sorted(dict.fromkeys(matched))
 
 
+def profile_gate_stub(candidate: dict[str, Any], target: dict[str, Any]) -> dict[str, str]:
+    spec = target.get("spec", {}) if isinstance(target.get("spec"), dict) else {}
+    included = spec.get("included_extensions_or_features", [])
+    excluded = spec.get("excluded_extensions_or_features", [])
+    if not isinstance(included, list):
+        included = []
+    if not isinstance(excluded, list):
+        excluded = []
+    spec_profile = spec.get("profile", "")
+    entries = ", ".join(candidate.get("entries", [])[:4])
+    class_note = candidate.get("evidence_class", "unknown")
+    return {
+        "extension_required": needs_agent(
+            "infer required ISA/profile feature from source and representative entries"
+            + (f" ({entries})" if entries else "")
+        ),
+        "current_profile_evidence": (
+            f"target spec profile={spec_profile or 'unspecified'}; "
+            f"included={included}; excluded={excluded}"
+        ),
+        "default_gate_eligible": needs_agent(
+            "yes/no/unknown after confirming feature availability and deterministic observable"
+        ),
+        "profile_gate_note": (
+            f"evidence_class={class_note}; do not recommend default gate until profile and "
+            "platform observability are checked"
+        ),
+    }
+
+
 def build_packet(
     summary: dict[str, Any],
     inspect_reports: list[dict[str, Any]],
@@ -146,7 +180,11 @@ def build_packet(
         if isinstance(path_analysis.get("path_signature_fields"), list)
         else []
     )
-    confidence_levels = path_analysis.get("confidence_levels", []) if isinstance(path_analysis.get("confidence_levels"), list) else []
+    confidence_levels = (
+        path_analysis.get("confidence_levels", [])
+        if isinstance(path_analysis.get("confidence_levels"), list)
+        else []
+    )
     candidates = [
         candidate
         for candidate in summary.get("candidates", [])
@@ -159,8 +197,9 @@ def build_packet(
         inspection_files = candidate.get("inspection_files", [])
         packet_candidates.append(
             {
-                "candidate_name": f"TODO: interpret {dimension}",
+                "candidate_name": needs_agent(f"interpret {dimension} as an architecture-visible scenario"),
                 "coverage_dimension": dimension,
+                "evidence_class": candidate.get("evidence_class", "unknown"),
                 "coverage_evidence": candidate.get("evidence"),
                 "source_or_gcov_evidence": line_evidence_for_dimension(
                     inspect_reports,
@@ -168,28 +207,38 @@ def build_packet(
                     candidate.get("entries", []),
                     max_line_evidence,
                 ),
-                "path_confidence": "TODO(agent): "
-                + " | ".join(confidence_levels or [
-                    "confirmed-not-executed",
-                    "single-case-increment-confirmed",
-                    "edge-covered-path-unknown",
-                    "needs-path-instrumentation",
-                    "out-of-scope",
-                ]),
-                "path_signature": {field: "TODO(agent): derive from source/gcov evidence" for field in signature_fields},
+                "path_confidence": needs_agent(
+                    "choose one after evidence review: "
+                    + " | ".join(
+                        confidence_levels
+                        or [
+                            "confirmed-not-executed",
+                            "counter-increment-observed",
+                            "single-case-increment-confirmed",
+                            "edge-covered-path-unknown",
+                            "needs-path-instrumentation",
+                            "out-of-scope",
+                        ]
+                    )
+                ),
+                "path_signature": {
+                    field: needs_agent("derive this field from source/gcov/path-marker evidence")
+                    for field in signature_fields
+                },
                 "required_evidence_points": [
-                    "TODO(agent): list must-pass line/branch/call/path-marker evidence and current status"
+                    needs_agent("list must-pass line/branch/call/path-marker evidence and current status")
                 ],
-                "target_semantic": "TODO(agent): map uncovered code to an architecture-visible scenario",
-                "scope_status": "TODO(agent): in-scope | out-of-scope | needs target decision",
-                "expected_observable": "TODO(agent): register/memory/trap/CSR/vector observable",
+                "target_semantic": needs_agent("map uncovered code to an architecture-visible scenario"),
+                "scope_status": needs_agent("in-scope | out-of-scope | needs target decision"),
+                "expected_observable": needs_agent("register/memory/trap/CSR/vector observable"),
+                "profile_gate": profile_gate_stub(candidate, target),
                 "duplicate_search_terms": duplicate_terms(target, dimension),
                 "suggested_test_point_area": handoff.get("suggested_test_point_area", ""),
                 "suggested_case_area": handoff.get("suggested_case_area", ""),
                 "gate_note": handoff.get("default_gate_note", "needs profile decision"),
                 "profile_questions": [
-                    "TODO(hyptest-workflow): confirm spec_profile and gate applicability",
-                    "TODO(hyptest-workflow): confirm duplicate search before writing cases",
+                    "hyptest-workflow must confirm spec_profile and gate applicability before writing cases",
+                    "hyptest-workflow must confirm duplicate search before writing cases",
                 ],
                 "implementation_owner": handoff.get("implementation_owner", "hyptest-workflow"),
                 "inspection_files": inspection_files,
@@ -222,6 +271,7 @@ def print_markdown(packet: dict[str, Any]) -> None:
         print()
         print(f"- candidate_name: {candidate['candidate_name']}")
         print(f"- coverage_dimension: {candidate['coverage_dimension']}")
+        print(f"- evidence_class: {candidate['evidence_class']}")
         print(f"- coverage_evidence: {candidate['coverage_evidence']}")
         print(f"- path_confidence: {candidate['path_confidence']}")
         if candidate.get("path_signature"):
@@ -235,6 +285,10 @@ def print_markdown(packet: dict[str, Any]) -> None:
         print(f"- target_semantic: {candidate['target_semantic']}")
         print(f"- scope_status: {candidate['scope_status']}")
         print(f"- expected_observable: {candidate['expected_observable']}")
+        if candidate.get("profile_gate"):
+            print("- profile_gate:")
+            for key, value in candidate["profile_gate"].items():
+                print(f"  - {key}: {value}")
         print(f"- gate_note: {candidate['gate_note']}")
         print(f"- implementation_owner: {candidate['implementation_owner']}")
         print(f"- suggested_test_point_area: `{candidate['suggested_test_point_area']}`")

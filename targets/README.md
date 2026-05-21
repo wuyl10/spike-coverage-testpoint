@@ -25,6 +25,8 @@ not in `SKILL.md` and not hardcoded in scripts.
   It excludes matching functions by function name, excludes matching events by
   source/evidence text, and masks matching source-context lines in markdown.
   Use it only for clear target exclusions; the agent still owns final judgment.
+  The line inspector reports excluded function/event counts; include those
+  counts in analysis when filters may hide meaningful evidence.
 - `line_priority_regex`: optional ranking hints for `inspect_gcov_lines.py`.
   Matching functions are printed earlier, without hiding non-matching evidence.
 - `dimensions`: coverage groups used by `analyze_spike_gcov.py`.
@@ -59,8 +61,9 @@ Cartesian product.
 Recommended subfields:
 
 - `confidence_levels`: labels such as `confirmed-not-executed`,
-  `single-case-increment-confirmed`, `edge-covered-path-unknown`,
-  `needs-path-instrumentation`, and `out-of-scope`.
+  `counter-increment-observed`, `single-case-increment-confirmed`,
+  `edge-covered-path-unknown`, `needs-path-instrumentation`, and
+  `out-of-scope`.
 - `evidence_policy`: guardrails that prevent over-inference from aggregate
   branch/call coverage.
 - `path_signature_fields`: a reporting checklist for the agent. These fields
@@ -74,8 +77,11 @@ Recommended subfields:
 Important boundary:
 
 - `.gcov` branch/call counters prove edge coverage, not full path coverage.
-- A controlled single-case run plus counter increases can strongly confirm a
-  small path fragment.
+- A controlled single-case run plus counter increases first gives
+  `counter-increment-observed`; upgrade to `single-case-increment-confirmed`
+  only when the run is tiny/isolated, target PC/instruction evidence exists,
+  every must-pass counter increased, and no required event/file is missing or
+  decreased.
 - A per-instruction/access path-marker log is the preferred proof when all
   edges are covered in aggregate but same-flow correlation matters.
 

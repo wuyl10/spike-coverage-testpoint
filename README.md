@@ -11,11 +11,12 @@
 
 - `SKILL.md`: Codex skill 主说明。
 - `targets/`: 覆盖率分析目标配置。具体规格、范围和排除项放这里。
-- `scripts/analyze_spike_gcov.py`: 解析 `gcov -b -c` summary，按 target 维度排序覆盖缺口。
-- `scripts/inspect_gcov_lines.py`: 精查 `.gcov`，提取 `#####`、未执行 branch/call 和源码上下文。
-- `scripts/build_handoff_packet.py`: 根据 summary/line JSON 生成 hyptest-workflow 交接包骨架。
-- `scripts/compare_gcov_snapshots.py`: 比较单 case 前后 `.gcov` 快照，确认必经 line/branch/call 计数是否增加。
-- `scripts/analyze_path_markers.py`: 解析 coverage Spike path-marker 日志，确认同一条执行流 marker 序列是否出现。
+- `scripts/analyze_spike_gcov.py`: 解析 `gcov -b -c` summary，按 target 维度排序覆盖缺口，并标出 `entry` / `shared-path` / `mixed` 证据类型。
+- `scripts/inspect_gcov_lines.py`: 精查 `.gcov`，提取 `#####`、未执行 branch/call、源码上下文，并报告被过滤掉的函数/事件数量。
+- `scripts/build_handoff_packet.py`: 根据 summary/line JSON 生成 hyptest-workflow 交接包骨架，包含 profile/gate 待确认字段。
+- `scripts/compare_gcov_snapshots.py`: 比较单 case 前后 `.gcov` 快照，报告函数上下文、计数增加、计数下降、before/after 缺失文件和缺失事件。
+- `scripts/analyze_path_markers.py`: 解析 coverage Spike path-marker 日志，报告 marker 序列是否出现；JSONL 是强相关证据，文本 fallback 是弱证据。
+- `scripts/check_handoff_final.py`: 检查报告/交接包里是否残留裸 `TODO(agent)`。
 - `scripts/validate_target.py`: 校验 target JSON 结构和正则。
 - `evals/`: skill 评估用例。
 
@@ -105,8 +106,8 @@ expected observable、duplicate search terms、gate note。
 目标用 targets/memblock_non_h.json。
 场景是：<用自然语言写清目标执行流，不要先枚举组合矩阵>。
 请先用 gcov/source 找这条路径的 must-pass line/branch/call evidence，
-再判断是 confirmed-not-executed、edge-covered-path-unknown、single-case-increment-confirmed，
-还是 needs-path-instrumentation。
+再判断是 confirmed-not-executed、counter-increment-observed、
+single-case-increment-confirmed、edge-covered-path-unknown，还是 needs-path-instrumentation。
 不要写 case。
 ```
 
@@ -119,7 +120,7 @@ after gcov 目录：<after_gcov_dir>。
 目标用 targets/memblock_non_h.json。
 重点文件：mmu.cc.gcov、mmu.h.gcov、v_ext_macros.h.gcov。
 请判断目标执行流的必经 line/branch/call 有没有从 0 变非 0 或计数增加，
-并给 path_confidence。
+并给 path_confidence；如果缺少单 case 隔离证据或 Spike log/PC 证据，只能标 counter-increment-observed。
 ```
 
 #### 7. 路径标记插桩设计或分析
@@ -130,7 +131,7 @@ after gcov 目录：<after_gcov_dir>。
 场景是：<具体执行流>。
 请从 target 的 path_analysis.path_markers 里选 marker，
 说明建议插在哪些 Spike 源码函数/分支，输出 JSONL marker 格式，
-以及如何用 analyze_path_markers.py 判断 marker 序列有没有出现。
+以及如何用 analyze_path_markers.py 判断 marker 序列有没有出现；JSONL 结果是 marker-sequence-observed，文本 fallback 只能算弱证据。
 不要改普通 Spike 行为。
 ```
 
@@ -150,9 +151,11 @@ after gcov 目录：<after_gcov_dir>。
 - 覆盖率输入：target、summary、gcov 目录。
 - 高优先级缺口：按维度排序，带 line/branch/call/0% entry 证据。
 - 行级证据：具体 `.gcov` 文件、源码行、函数、miss kind。
-- 路径置信度：`confirmed-not-executed`、`single-case-increment-confirmed`、`edge-covered-path-unknown`、`needs-path-instrumentation` 或 `out-of-scope`。
+- 证据类型：`entry`、`shared-path` 或 `mixed`；`mixed` 需要继续看共享源码，避免把指令入口覆盖当成共享语义路径覆盖。
+- 路径置信度：`confirmed-not-executed`、`counter-increment-observed`、`single-case-increment-confirmed`、`edge-covered-path-unknown`、`needs-path-instrumentation` 或 `out-of-scope`。
 - 路径签名：从 Spike 源码和 `.gcov` 证据反推的目标入口、共享函数路径、must-pass 证据点、源码证明的条件、observable、剩余不确定性。
 - 测试点候选：missing scenario、test idea、observable、gate note。
+- profile/gate 判断：`extension_required`、`current_profile_evidence`、`default_gate_eligible`、`profile_gate_note`。
 - 查重提示：应该在 hyptest 里搜哪些关键词。
 - handoff packet：后续交给 `hyptest-workflow` 写 case。
 
@@ -202,6 +205,12 @@ python3 scripts/build_handoff_packet.py \
   --markdown
 ```
 
+最终回答前检查是否还残留裸 TODO：
+
+```bash
+python3 scripts/check_handoff_final.py /tmp/spike_cov_memblock_analysis/handoff.md
+```
+
 比较单 case 前后 `.gcov` 快照：
 
 ```bash
@@ -246,5 +255,8 @@ python3 scripts/analyze_path_markers.py \
 - 覆盖率只是证据，不是测试意图。
 - `insns/*.h` 入口覆盖只能说明指令入口有没有跑到，语义仍要结合共享路径源码判断。
 - branch/call 覆盖是聚合边计数，不等于完整路径覆盖；同一条执行流需要单 case 增量证据或 path marker 证据。
+- `single-case-increment-confirmed` 要求：单 case 隔离、目标 PC/指令证据、所有 must-pass counters 增加，并且没有 missing/decreased 事件；否则降级为 `counter-increment-observed` 或 `edge-covered-path-unknown`。
+- path marker 脚本的 `marker-sequence-observed` 只说明 marker 序列在 JSON per-instruction/access 记录里出现，最终路径结论仍要检查插桩位置和架构 observable。
+- 默认 gate 测试点必须先做 profile/gate 判断；0% entry 可能只是 ISA/profile 没打开，不一定值得写默认用例。
 - 不要从 target 里的字段枚举“理论组合”来生成测试点；必须从 Spike 源码、`.gcov`、单 case 增量或 marker 记录反推真实路径。
 - 生成 case、修改 `test_point`、注册 `test_register.c` 时，应切到 `hyptest-workflow` skill。

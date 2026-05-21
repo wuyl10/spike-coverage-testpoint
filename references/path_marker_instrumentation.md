@@ -23,6 +23,14 @@ appeared somewhere is weaker and should be treated like edge evidence.
 - Do not change architectural behavior, exception priority, timing model, or
   return values.
 - Prefer one record per dynamic guest instruction/access over scattered logs.
+- Fault and throw paths must flush or emit the marker record before the
+  exception leaves the instrumented scope. Do not rely only on normal function
+  return.
+- Prefer an RAII/scope-guard style record owner so early returns and exception
+  paths emit or explicitly discard records consistently.
+- Marker collection must not allocate, throw, take locks, or perform I/O on a
+  path where that could perturb trap priority or Spike behavior. Buffer records
+  safely and flush from a controlled point when needed.
 - Marker names should come from the selected target file's
   `path_analysis.path_markers`.
 
@@ -51,6 +59,31 @@ struct mem_path_cov_t {
   void end(const char* insn_name) {
     if (!enabled || markers.empty()) return;
     // Emit JSONL to the configured stream/file.
+  }
+
+  void abort_record() {
+    if (!enabled) return;
+    markers.clear();
+  }
+};
+
+struct mem_path_scope_t {
+  mem_path_cov_t& cov;
+  const char* insn_name;
+  bool active = true;
+
+  mem_path_scope_t(mem_path_cov_t& cov, reg_t pc, const char* insn_name)
+      : cov(cov), insn_name(insn_name) {
+    cov.begin(pc);
+  }
+
+  ~mem_path_scope_t() {
+    if (active) cov.end(insn_name);
+  }
+
+  void abort() {
+    active = false;
+    cov.abort_record();
   }
 };
 #define MEM_PATH_BEGIN(pc) do { mem_path_cov.begin(pc); } while (0)
@@ -102,8 +135,14 @@ python3 scripts/analyze_path_markers.py \
 ```
 
 5. Interpret:
-   - Required marker sequence appears in one record:
-     `single-case-increment-confirmed` or marker-confirmed path evidence.
+   - Required marker sequence appears in one JSON per-instruction/access record:
+     `marker-sequence-observed`. This is marker evidence; the agent still must
+     validate marker placement and the architectural observable before choosing
+     final path confidence.
+   - Required marker sequence appears only through text fallback:
+     `text-marker-sequence-observed-weak`; treat it as weak evidence unless the
+     log format is independently proven to be one dynamic instruction/access per
+     line.
    - Individual markers appear only in separate records:
      `edge-covered-path-unknown`.
    - Required marker never appears:
@@ -114,5 +153,8 @@ python3 scripts/analyze_path_markers.py \
 
 - Emitting only global marker counters and claiming full path coverage.
 - Logging markers from helper calls without a per-instruction/access record.
+- Forgetting to flush records on fault/throw paths.
+- Using marker I/O or allocation in a way that changes exception priority or
+  behavior.
 - Letting marker output perturb exception behavior or commit ordering.
 - Adding target-specific marker names to `SKILL.md` instead of the target file.

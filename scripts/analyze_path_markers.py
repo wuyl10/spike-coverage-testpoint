@@ -29,6 +29,7 @@ class MarkerRecord:
     insn: str | None
     markers: list[str]
     raw: str
+    record_format: str
 
 
 @dataclass
@@ -37,9 +38,12 @@ class SequenceResult:
     required_markers: list[str]
     match_mode: str
     count: int
+    json_record_count: int
+    text_record_count: int
     example_line: int | None
     example_pc: str | None
     example_insn: str | None
+    evidence_strength: str
     status: str
 
 
@@ -51,10 +55,20 @@ def parse_record(line_no: int, text: str) -> MarkerRecord | None:
     try:
         obj = json.loads(stripped)
     except json.JSONDecodeError:
-        markers = sorted(dict.fromkeys(MARKER_RE.findall(stripped)))
+        # Preserve first-seen order. Text logs can show marker co-occurrence on
+        # one line, but they are weak evidence because the parser cannot prove a
+        # per-instruction/access JSON record schema.
+        markers = list(dict.fromkeys(MARKER_RE.findall(stripped)))
         if not markers:
             return None
-        return MarkerRecord(line=line_no, pc=None, insn=None, markers=markers, raw=stripped)
+        return MarkerRecord(
+            line=line_no,
+            pc=None,
+            insn=None,
+            markers=markers,
+            raw=stripped,
+            record_format="text",
+        )
 
     if not isinstance(obj, dict):
         return None
@@ -75,6 +89,7 @@ def parse_record(line_no: int, text: str) -> MarkerRecord | None:
         insn=str(obj.get("insn")) if obj.get("insn") is not None else None,
         markers=markers,
         raw=stripped,
+        record_format="json",
     )
 
 
@@ -138,17 +153,33 @@ def analyze_sequences(
     for sequence in sequences:
         required = sequence["markers"]
         matches = [record for record in records if sequence_matches(record, required, ordered)]
-        example = matches[0] if matches else None
+        json_matches = [record for record in matches if record.record_format == "json"]
+        text_matches = [record for record in matches if record.record_format != "json"]
+        if json_matches:
+            status = "marker-sequence-observed"
+            evidence_strength = "per-record-json"
+            example = json_matches[0]
+        elif text_matches:
+            status = "text-marker-sequence-observed-weak"
+            evidence_strength = "text-fallback-weak"
+            example = text_matches[0]
+        else:
+            status = "not-observed-in-marker-log"
+            evidence_strength = "none"
+            example = None
         results.append(
             SequenceResult(
                 name=sequence["name"],
                 required_markers=required,
                 match_mode="ordered-subsequence" if ordered else "same-record-subset",
                 count=len(matches),
+                json_record_count=len(json_matches),
+                text_record_count=len(text_matches),
                 example_line=example.line if example else None,
                 example_pc=example.pc if example else None,
                 example_insn=example.insn if example else None,
-                status="confirmed-executed" if matches else "not-observed-in-marker-log",
+                evidence_strength=evidence_strength,
+                status=status,
             )
         )
     return results
@@ -162,27 +193,41 @@ def summarize_markers(records: list[MarkerRecord]) -> list[dict[str, Any]]:
     return [{"marker": marker, "records": count} for marker, count in sorted(counts.items())]
 
 
+def summarize_record_formats(records: list[MarkerRecord]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in records:
+        counts[record.record_format] = counts.get(record.record_format, 0) + 1
+    return counts
+
+
 def print_markdown(result: dict[str, Any], top_markers: int) -> None:
     print("## Path-marker evidence")
     print()
     print(f"- log: `{result['log']}`")
     print(f"- records: {result['record_count']}")
-    print("- meaning: marker sequences preserve per-record path correlation when emitted per guest instruction/access")
+    if result.get("record_format_counts"):
+        format_bits = [f"{name}={count}" for name, count in sorted(result["record_format_counts"].items())]
+        print(f"- record formats: {', '.join(format_bits)}")
+    print("- meaning: JSON per-instruction/access records can preserve same-flow marker correlation")
+    print("- caution: text fallback is weak evidence and must not be treated as final path proof")
     print()
 
     if result["sequence_results"]:
         print("## Required sequences")
         print()
-        print("| Sequence | Status | Match mode | Count | Example line | Example PC | Example insn | Required markers |")
-        print("|---|---|---|---:|---:|---|---|---|")
+        print("| Sequence | Status | Strength | Match mode | Count | JSON | Text | Example line | Example PC | Example insn | Required markers |")
+        print("|---|---|---|---|---:|---:|---:|---:|---|---|---|")
         for item in result["sequence_results"]:
             markers = ", ".join(f"`{marker}`" for marker in item["required_markers"])
             print(
-                "| {name} | {status} | {mode} | {count} | {line} | {pc} | {insn} | {markers} |".format(
+                "| {name} | {status} | {strength} | {mode} | {count} | {json_count} | {text_count} | {line} | {pc} | {insn} | {markers} |".format(
                     name=item["name"],
                     status=item["status"],
+                    strength=item["evidence_strength"],
                     mode=item["match_mode"],
                     count=item["count"],
+                    json_count=item["json_record_count"],
+                    text_count=item["text_record_count"],
                     line=item["example_line"] if item["example_line"] is not None else "-",
                     pc=item["example_pc"] or "-",
                     insn=item["example_insn"] or "-",
@@ -213,6 +258,7 @@ def main() -> int:
     result = {
         "log": str(args.log),
         "record_count": len(records),
+        "record_format_counts": summarize_record_formats(records),
         "marker_counts": summarize_markers(records),
         "sequence_results": [asdict(item) for item in analyze_sequences(records, sequences, args.ordered)],
     }

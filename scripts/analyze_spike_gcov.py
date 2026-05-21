@@ -34,6 +34,7 @@ class Entry:
 class EvidenceCandidate:
     score: float
     dimension: str
+    evidence_class: str
     evidence: str
     entries: list[str]
     rationale: str
@@ -275,6 +276,42 @@ def inspection_files_for_candidate(group: dict, target: Target, limit: int = 16)
     return list(dict.fromkeys(files))[:limit]
 
 
+def is_insn_entry(name: str) -> bool:
+    return normalize_name(name).startswith("riscv/insns/")
+
+
+def evidence_class_for_group(group: dict, target: Target) -> str:
+    dimension = str(group.get("dimension", "")).lower()
+    entries = [str(name) for name in group.get("entries", [])]
+    evidence_entries = [str(name) for name in group.get("zero_entries", []) + group.get("low_branch_entries", [])]
+    source_priority = {normalize_name(item) for item in target.source_priority}
+    source_priority_basenames = {Path(item).name for item in source_priority}
+    inspection_files = inspection_files_for_candidate(group, target)
+    inspection_basenames = {Path(item).name for item in inspection_files}
+
+    if (
+        "shared" in dimension
+        or any(name in source_priority for name in entries + evidence_entries)
+        or any(Path(name).name in source_priority_basenames for name in entries + evidence_entries)
+    ):
+        return "shared-path"
+
+    inspected_shared = any(
+        item in inspection_basenames
+        or Path(item).name in inspection_basenames
+        or f"{Path(item).name}.gcov" in inspection_basenames
+        for item in source_priority
+    )
+    if inspected_shared:
+        return "mixed"
+
+    class_basis = evidence_entries or entries
+    if class_basis and all(is_insn_entry(name) for name in class_basis):
+        return "entry"
+
+    return "mixed"
+
+
 def score_group(group: dict) -> float:
     score = 0.0
     if group["zero_count"]:
@@ -320,6 +357,7 @@ def build_candidates(groups: list[dict], focus: str | None, target: Target) -> l
             EvidenceCandidate(
                 score=score_group(group),
                 dimension=dim,
+                evidence_class=evidence_class_for_group(group, target),
                 evidence=evidence,
                 entries=group["zero_entries"][:10] or group["low_branch_entries"][:10],
                 rationale="; ".join(rationale_bits)
@@ -363,6 +401,7 @@ def summarize(entries: list[Entry], target: Target, focus: str | None = None) ->
             {
                 "dimension": dim,
                 "files": len(present),
+                "entries": [entry.name for entry in present],
                 "line_pct": weighted_pct(present, "line_pct", "lines"),
                 "branch_pct": weighted_pct(present, "branch_pct", "branches"),
                 "call_pct": weighted_pct(present, "call_pct", "calls"),
@@ -448,21 +487,38 @@ def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
             )
         )
 
-    print(f"\n## Ranked coverage evidence (top {top})")
-    print("| Rank | Score | Dimension | Coverage evidence | Rationale | Representative entries | Inspect next |")
-    print("|---:|---:|---|---|---|---|---|")
-    for idx, candidate in enumerate(summary["candidates"][:top], start=1):
-        print(
-            "| {rank} | {score:.2f} | {dimension} | {evidence} | {rationale} | `{entries}` | `{inspect}` |".format(
-                rank=idx,
-                score=candidate["score"],
-                dimension=candidate["dimension"],
-                evidence=candidate["evidence"].replace("|", "\\|"),
-                rationale=candidate["rationale"].replace("|", "\\|"),
-                entries=short_names(candidate["entries"], limit=8),
-                inspect=", ".join(candidate.get("inspection_files") or []),
+    def print_candidate_table(title: str, candidates: list[dict], max_rows: int) -> None:
+        print(f"\n## {title} (top {max_rows})")
+        print("| Rank | Score | Class | Dimension | Coverage evidence | Rationale | Representative entries | Inspect next |")
+        print("|---:|---:|---|---|---|---|---|---|")
+        for idx, candidate in enumerate(candidates[:max_rows], start=1):
+            print(
+                "| {rank} | {score:.2f} | {klass} | {dimension} | {evidence} | {rationale} | `{entries}` | `{inspect}` |".format(
+                    rank=idx,
+                    score=candidate["score"],
+                    klass=candidate.get("evidence_class", "unknown"),
+                    dimension=candidate["dimension"],
+                    evidence=candidate["evidence"].replace("|", "\\|"),
+                    rationale=candidate["rationale"].replace("|", "\\|"),
+                    entries=short_names(candidate["entries"], limit=8),
+                    inspect=", ".join(candidate.get("inspection_files") or []),
+                )
             )
-        )
+
+    print_candidate_table("Ranked coverage evidence", summary["candidates"], top)
+
+    shared_candidates = [
+        candidate for candidate in summary["candidates"] if candidate.get("evidence_class") == "shared-path"
+    ]
+    mixed_candidates = [
+        candidate for candidate in summary["candidates"] if candidate.get("evidence_class") == "mixed"
+    ]
+    entry_candidates = [
+        candidate for candidate in summary["candidates"] if candidate.get("evidence_class") == "entry"
+    ]
+    print_candidate_table("Ranked shared semantic path gaps", shared_candidates, top)
+    print_candidate_table("Ranked mixed entry/shared-review gaps", mixed_candidates, top)
+    print_candidate_table("Ranked entry coverage gaps", entry_candidates, top)
 
     print("\n## 0% entries")
     for entry in summary["zero_entries"][:detail_limit]:

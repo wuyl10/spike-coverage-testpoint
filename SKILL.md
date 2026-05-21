@@ -51,7 +51,7 @@ The deliverable is a ranked set of **coverage-backed test-point cards**. Each ca
 
 ```text
 Coverage evidence: which file/dimension is low, with line/branch/call evidence
-Path evidence: confirmed-not-executed | single-case-increment-confirmed | edge-covered-path-unknown | needs-path-instrumentation | out-of-scope
+Path evidence: confirmed-not-executed | counter-increment-observed | single-case-increment-confirmed | edge-covered-path-unknown | needs-path-instrumentation | out-of-scope
 Missing scenario: the architectural behavior missing from tests
 Why high value: why it should improve Spike coverage and RTL confidence
 Test idea: concrete setup/action
@@ -71,14 +71,22 @@ Use these rules whenever the user cares about execution paths, combinations, or 
 - gcov line/branch/call coverage is edge/counter evidence, not full path coverage. If branch A and branch B are each covered in aggregate, do not claim the path A -> B was covered unless a single-case increment or path marker proves correlation.
 - Classify path confidence explicitly:
   - `confirmed-not-executed`: a must-pass entry/line/branch/call for the proposed path is zero or never executed.
-  - `single-case-increment-confirmed`: one tiny single-purpose run executed the target guest instruction and all must-pass line/branch/call counters increased in the before/after `.gcov` comparison.
+  - `counter-increment-observed`: required counters increased, but the run is not isolated enough, Spike log/profile evidence is missing, some required point is not checked, or missing/decreased events make final path confirmation unsafe.
+  - `single-case-increment-confirmed`: one tiny single-purpose run executed the target guest instruction, Spike log or equivalent target PC/instruction evidence confirms that instruction, every must-pass line/branch/call counter increased in the before/after `.gcov` comparison, and no required point is `decreased-or-reset` or missing.
   - `edge-covered-path-unknown`: relevant edges have aggregate coverage, but no evidence proves they occurred in the same instruction/access flow.
   - `needs-path-instrumentation`: internal path correlation cannot be proven from gcov plus Spike logs; propose target-defined path markers.
   - `out-of-scope`: the path belongs to `scope_out`.
+- Do not overuse `single-case-increment-confirmed`. It requires all of these:
+  - isolated one-case evidence, not a suite run or a loop-heavy case;
+  - target guest PC/instruction evidence from Spike log, commit log, or an equivalent run artifact;
+  - all must-pass counters increase;
+  - no required `decreased-or-reset`, `missing-after-event`, unresolved `missing-before-event`, `missing-before-file`, or `missing-after-file`.
+  If any item is missing, downgrade to `counter-increment-observed` or `edge-covered-path-unknown`.
 - For path-sensitive work, build a **path signature from source/gcov evidence** before proposing a case. Use `path_analysis.path_signature_fields` only as a reporting checklist; do not treat it as a complete architecture matrix.
 - Apply `path_analysis.evidence_policy` and `path_analysis.path_markers` from the selected target when present. Do not invent path combinations from target JSON; derive them from Spike source, `.gcov`, single-case deltas, or path-marker records.
 - Prefer tiny single-purpose cases for increment confirmation. If one case contains loops or many similar memory instructions, mark confidence lower because counter deltas may come from different dynamic instructions.
 - Path-marker instrumentation is for coverage Spike only. Keep it gated by a build flag, runtime option, or environment variable, and do not require it for normal Spike or default hyptest gates.
+- Treat `marker-sequence-observed` from JSONL path markers as marker evidence, not as final architecture proof by itself. Validate marker placement, per-instruction/access correlation, and expected observable before upgrading path confidence. Treat `text-marker-sequence-observed-weak` as weak evidence only.
 
 ## Script And Agent Boundary
 
@@ -102,12 +110,15 @@ Do not let script output become the final answer by itself. Script output is evi
 - Separate **entry coverage** from **semantic coverage**:
   - `insns/*.h` line coverage only proves the instruction entry executed.
   - Shared-path branch/call coverage proves whether the interesting MMU/vector/atomic/trigger/fault logic executed.
+  - `analyze_spike_gcov.py` labels candidates as `entry`, `shared-path`, or `mixed`; use that label to avoid ranking one-line instruction smoke gaps above reusable semantic path gaps.
 - Separate **edge coverage** from **path coverage**:
   - Aggregate branch coverage does not prove a branch sequence happened in the same dynamic instruction/access.
   - Single-case counter deltas plus Spike logs can strongly confirm a tiny case's required path points.
   - Path markers are required when internal correlation matters and gcov cannot prove it.
 - Prefer test points that cover a reusable semantic class rather than one smoke instruction.
 - Do not propose a default-gate point unless the expected behavior is stable in official Spike and the current hyptest platform can observe it.
+- Before recommending a default-gate case for a 0% entry, make a profile/gate decision: required extension/profile, evidence that the current target includes it, whether default hyptest can run it, and why it is not blocked/manual-only.
+- Final user-facing answers must not contain raw `TODO(agent)` placeholders. If a field cannot be resolved, write `needs source confirmation: <specific reason>` or `needs profile decision: <specific reason>`.
 
 ## Inputs To Locate
 
@@ -151,11 +162,13 @@ If the user provides different paths, use those.
 4. **Rank coverage evidence**
    - First pass: use `scripts/analyze_spike_gcov.py --target <target.json> --top <N> --markdown`.
    - Treat the score as a triage hint only. It is based on 0% entries and low line/branch/call coverage; it is not a semantic test quality score.
+   - Read `evidence_class`. Prefer `shared-path` when the user's goal is semantic/path coverage. Treat `mixed` as "entry evidence that needs shared source review"; treat `entry` as profile-gated entry evidence until source review shows value.
    - Do not turn this ranking directly into test points without source/gcov inspection and agent reasoning.
    - If a high-ranked gap is only an instruction entry, inspect shared paths or mark it as `entry-only evidence`.
 
 5. **Inspect exact uncovered code before proposing detailed tests**
    - For top gaps, run `inspect_gcov_lines.py` on the relevant `.gcov` files with the same `--target`.
+   - Report `excluded by filters` counts when filters hide evidence; if many functions/events are excluded, mention that filtered evidence could affect ranking or candidate completeness.
    - Then open `.gcov` and source around the most important misses when needed.
    - Look for `#####`, never-executed branches, and never-executed calls.
    - Group misses by function before explaining them; the function often tells the scenario better than an isolated line.
@@ -173,7 +186,7 @@ If the user provides different paths, use those.
      - remaining uncertainty
    - If any must-pass event is zero in the suite `.gcov`, mark `confirmed-not-executed`.
    - If all events have aggregate coverage but no same-flow proof, mark `edge-covered-path-unknown`.
-   - To confirm a specific tiny case, take before/after `.gcov` snapshots and run `compare_gcov_snapshots.py`; use Spike `-l --log-commits --log=<file>` when useful.
+   - To confirm a specific tiny case, take before/after `.gcov` snapshots and run `compare_gcov_snapshots.py`; use Spike `-l --log-commits --log=<file>` when useful. If the compare output has `decreased-or-reset`, missing files, or missing required events, do not use it for positive path confirmation.
    - If the path depends on internal correlation that gcov cannot tie together, propose target-defined path markers and mark `needs-path-instrumentation`.
 
 7. **Check existing hyptest coverage**
@@ -185,9 +198,10 @@ If the user provides different paths, use those.
 8. **Output an actionable plan**
    - Give evidence first: target, file/coverage/line/branch/call and exact gap.
    - Include path confidence and explain whether the evidence is an entry, edge, single-case increment, or marker-sequence proof.
+   - Include profile/gate fields before recommending default-gate cases: `extension_required`, `current_profile_evidence`, `default_gate_eligible`, and `profile_gate_note`.
    - Then give proposed test point: setup, action, expected observation, and likely hyptest location.
    - Mark `default`, `manual/special-run`, `blocked`, `out-of-scope`, or `needs profile decision` when obvious.
-   - Use `build_handoff_packet.py` when summary/line JSON is available, then fill the TODO fields with agent reasoning.
+   - Use `build_handoff_packet.py` when summary/line JSON is available, then replace any unresolved skeleton fields with agent reasoning or `needs source confirmation: <reason>`.
    - Always include a compact `hyptest-workflow handoff packet` for recommended candidates. It is a handoff artifact, not permission to write cases.
 
 ## Bundled Tools
@@ -260,7 +274,7 @@ python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/bui
   --markdown
 ```
 
-This only builds a packet skeleton. The agent must fill `target_semantic`, `scope_status`, `expected_observable`, and final `gate_note` from source review and architecture reasoning.
+This only builds a packet skeleton. The agent must fill `target_semantic`, `scope_status`, `expected_observable`, `profile_gate`, and final `gate_note` from source review and architecture reasoning.
 If the packet lists `missing_inspection_files`, inspect those `.gcov` files before treating the candidate as fully reviewed, or mark the candidate `needs source confirmation`.
 
 Use `compare_gcov_snapshots.py` for single-case incremental coverage confirmation:
@@ -278,8 +292,10 @@ python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/com
 
 Interpretation:
 
-- `newly-covered` or `increased` on all must-pass points in a tiny single-purpose run supports `single-case-increment-confirmed`.
+- `newly-covered` or `increased` on all must-pass points supports `counter-increment-observed` first.
+- Upgrade to `single-case-increment-confirmed` only if the run is tiny/single-purpose, target PC/instruction evidence exists, and no required event/file is missing or decreased.
 - `still-zero` on any must-pass point means `confirmed-not-executed`.
+- `decreased-or-reset`, `missing-after-event`, unresolved `missing-before-event`, `missing-before-file`, or `missing-after-file` are invalid for positive path confirmation until explained.
 - Aggregate counters without a controlled single-case run mean `edge-covered-path-unknown`.
 
 When the user asks how to run or interpret a single-case increment check, read
@@ -303,7 +319,7 @@ Preferred marker log format:
 {"pc":"0x80001000","insn":"lw","markers":["mem.access.scalar_load","mem.translate.tlb_miss_walk","mem.fault.page"]}
 ```
 
-Only marker records that preserve per-instruction/access correlation can prove a full path. Plain text marker counts are weaker and should be treated as edge evidence unless they are emitted per dynamic instruction/access.
+Only JSON marker records that preserve per-instruction/access correlation can support same-flow path evidence. Plain text fallback is weaker and should be treated as edge evidence unless independently proven to be one dynamic instruction/access record. The script status `marker-sequence-observed` means the marker sequence appeared; the agent still must validate marker placement and observable behavior.
 
 When the user asks to design or review path-marker instrumentation, read
 `references/path_marker_instrumentation.md`. Keep target-specific marker names
@@ -348,7 +364,8 @@ selected_candidates:
     coverage_dimension:
     coverage_evidence:
     source_or_gcov_evidence:
-    path_confidence: confirmed-not-executed | single-case-increment-confirmed | edge-covered-path-unknown | needs-path-instrumentation | out-of-scope
+    evidence_class: entry | shared-path | mixed
+    path_confidence: confirmed-not-executed | counter-increment-observed | single-case-increment-confirmed | edge-covered-path-unknown | needs-path-instrumentation | out-of-scope
     path_signature:
       target_instruction_or_entry:
       shared_source_function_path:
@@ -365,6 +382,11 @@ selected_candidates:
     target_semantic:
     scope_status: in-scope | out-of-scope | needs target decision
     expected_observable:
+    profile_gate:
+      extension_required:
+      current_profile_evidence:
+      default_gate_eligible:
+      profile_gate_note:
     duplicate_search_terms:
     suggested_test_point_area:
     suggested_case_area:
