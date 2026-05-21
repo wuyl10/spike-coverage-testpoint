@@ -59,6 +59,7 @@ class Target:
     source_priority: list[str]
     inspection_hints: dict[str, list[str]]
     handoff_defaults: dict[str, Any]
+    path_analysis: dict[str, Any]
 
 
 def as_str_list(value: object, field: str) -> list[str]:
@@ -137,6 +138,7 @@ def load_target(path: Path) -> Target:
         source_priority=as_str_list(data.get("source_priority"), "source_priority"),
         inspection_hints=as_str_list_map(data.get("inspection_hints"), "inspection_hints"),
         handoff_defaults=as_object(data.get("handoff_defaults"), "handoff_defaults"),
+        path_analysis=as_object(data.get("path_analysis"), "path_analysis"),
     )
 
 
@@ -422,6 +424,10 @@ def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
         print(f"- summary exclusions: {'; '.join(filters)}")
     if target["source_priority"]:
         print(f"- source priority: {'; '.join(target['source_priority'])}")
+    if target.get("path_analysis"):
+        axes = target["path_analysis"].get("combination_axes", {})
+        if isinstance(axes, dict) and axes:
+            print(f"- path axes: {'; '.join(axes.keys())}")
     print()
 
     print("## Dimension coverage evidence")

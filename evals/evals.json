@@ -17,6 +17,7 @@
         "Uses scripts only for coverage evidence extraction/ranking, then performs agent reasoning for test-point candidates.",
         "Uses target inspection_hints or source_priority to choose line-level gcov files for top candidates.",
         "Ranks at least five candidates with coverage evidence and test observables in the final agent report.",
+        "Labels path confidence instead of treating aggregate branch coverage as full path coverage.",
         "Does not write or modify hyptest cases.",
         "Includes a structured hyptest-workflow handoff packet for implementation.",
         "Fills handoff semantic fields by agent reasoning rather than leaving raw script TODOs in the final answer."
@@ -32,6 +33,7 @@
         "Focuses only on vector indexed and vector whole/mask candidates.",
         "Identifies zero entries such as vsuxei/vsoxei/vl4re/vl8re/vsm when present in the snapshot.",
         "Provides observable assertions for vector register or memory results.",
+        "Distinguishes 0% entry evidence from shared-path/vector macro path evidence.",
         "Includes duplicate-search terms.",
         "States that case implementation should use hyptest-workflow.",
         "Does not treat the handoff packet as permission to write cases."
@@ -48,6 +50,7 @@
         "Maps mmu.h gaps to shared target paths rather than only instruction headers.",
         "Excludes scenarios listed in target scope_out.",
         "Proposes self-checkable candidates with trap/memory/register observables.",
+        "Marks paths with aggregate-only branch/call evidence as edge-covered-path-unknown when same-flow correlation is not proven.",
         "Marks memtracer/log style points as manual or special-run when appropriate."
       ]
     },
@@ -66,6 +69,7 @@
         "Performs the scenario/value/test-point judgment in the agent analysis, not as a script claim.",
         "Distinguishes semantic branches from defensive abort/default paths.",
         "Translates at least three uncovered code paths into architecture-visible in-scope test ideas.",
+        "Includes required evidence points and path confidence for path-sensitive candidates.",
         "Marks special-run paths such as tracer/log separately when encountered.",
         "Does not modify hyptest source files."
       ]
@@ -98,6 +102,7 @@
         "Does not run analysis with an implicit all-riscv/default target.",
         "Asks for or proposes a target file before coverage analysis.",
         "Mentions required fields including spec, scope_in, scope_out, and dimensions.",
+        "Mentions optional path_analysis when the goal involves path-sensitive execution-flow coverage.",
         "Mentions validate_target.py as the check after creating or editing a target.",
         "Keeps scripts evidence-only and agent-owned semantic judgment."
       ]
@@ -111,9 +116,27 @@
         "Uses the structured hyptest-workflow handoff packet format.",
         "Includes implementation_owner: hyptest-workflow.",
         "Includes target_file, coverage evidence, expected observable, duplicate-search terms, and gate note.",
+        "Includes path_confidence and path_signature fields when target path_analysis is available.",
         "May use build_handoff_packet.py for the skeleton but does not treat skeleton TODOs as final analysis.",
         "States that hyptest-workflow must still do duplicate checks and profile/gate checks.",
         "Does not modify hyptest source files."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "我要判断 MemBlock 某条执行流有没有真的跑过，不是只看每个 branch 是否分别覆盖。用 targets/memblock_non_h.json，说明怎么用单 case 增量覆盖和 path marker 判断。",
+      "expected_output": "Builds a path signature from target path_analysis, explains gcov aggregate branch coverage limitations, proposes single-case before/after .gcov comparison, and recommends path markers when same-flow correlation cannot be proven.",
+      "files": [
+        "/nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/memblock_non_h.json"
+      ],
+      "assertions": [
+        "Uses target path_analysis rather than hardcoding MemBlock axes in the skill body.",
+        "Explains that aggregate branch/call coverage is not full path coverage.",
+        "Defines confidence labels such as confirmed-not-executed, single-case-increment-confirmed, edge-covered-path-unknown, and needs-path-instrumentation.",
+        "Uses or recommends compare_gcov_snapshots.py for before/after .gcov deltas.",
+        "Uses or recommends analyze_path_markers.py for per-instruction/access marker logs.",
+        "Keeps path marker instrumentation gated to coverage Spike and does not require normal Spike behavior changes.",
+        "Does not write hyptest cases unless separately requested."
       ]
     }
   ]

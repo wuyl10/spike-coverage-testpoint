@@ -46,6 +46,42 @@
     "Optional notes for the agent about how to interpret coverage evidence for this target.",
     "Keep target-specific spec assumptions here."
   ],
+  "path_analysis": {
+    "purpose": "Optional path-aware coverage model. Use this to describe the execution-flow axes and marker vocabulary the agent should use when gcov branch/call coverage is not enough.",
+    "confidence_levels": [
+      "confirmed-not-executed",
+      "single-case-increment-confirmed",
+      "edge-covered-path-unknown",
+      "needs-path-instrumentation",
+      "out-of-scope"
+    ],
+    "combination_axes": {
+      "axis_name": [
+        "value_a",
+        "value_b"
+      ]
+    },
+    "path_markers": {
+      "marker.name": {
+        "meaning": "What this marker proves when emitted by an instrumented Spike.",
+        "suggested_locations": [
+          "riscv/example.cc:function_or_branch"
+        ]
+      }
+    },
+    "single_case_increment": {
+      "required_practice": [
+        "Run one tiny single-purpose case after resetting or snapshotting coverage counters.",
+        "Compare before/after .gcov snapshots for required line/branch/call counter increases.",
+        "Use Spike -l --log-commits when useful to confirm the target guest instruction executed."
+      ],
+      "interpretation": [
+        "If a required edge/call stays zero, the path is confirmed not executed.",
+        "If all required counters increase in a tiny single-purpose case, mark single-case-increment-confirmed.",
+        "If edges are covered only in aggregate, mark edge-covered-path-unknown."
+      ]
+    }
+  },
   "inspection_hints": {
     "example shared paths": [
       "example.cc.gcov",

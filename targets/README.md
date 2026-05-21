@@ -28,6 +28,9 @@ not in `SKILL.md` and not hardcoded in scripts.
 - `line_priority_regex`: optional ranking hints for `inspect_gcov_lines.py`.
   Matching functions are printed earlier, without hiding non-matching evidence.
 - `dimensions`: coverage groups used by `analyze_spike_gcov.py`.
+- `path_analysis`: optional path-sensitive model. Use it for combination axes,
+  path confidence labels, single-case increment rules, and path-marker names.
+  Put target-specific path axes here, not in `SKILL.md` or scripts.
 - `analysis_notes`: optional target-specific interpretation guidance for the
   agent. Keep spec assumptions here, alongside the rest of the target.
 - `source_priority`: source files the agent should inspect first when turning
@@ -45,6 +48,32 @@ not in `SKILL.md` and not hardcoded in scripts.
 summary recommends `.gcov` files that were not included in the line-level
 inspection JSON. Treat those as next files to inspect before finalizing a
 test-point card.
+
+## Path Analysis
+
+Use `path_analysis` when branch/call coverage is not enough to prove the same
+dynamic instruction/access executed a full path.
+
+Recommended subfields:
+
+- `confidence_levels`: labels such as `confirmed-not-executed`,
+  `single-case-increment-confirmed`, `edge-covered-path-unknown`,
+  `needs-path-instrumentation`, and `out-of-scope`.
+- `combination_axes`: target-specific path axes. For MemBlock this may include
+  access type, instruction form, address shape, translation state, protection
+  state, exception priority, vector state, atomic state, and trigger state.
+- `path_markers`: marker names plus meanings and suggested Spike source
+  locations for coverage-only instrumentation.
+- `single_case_increment`: how to interpret before/after `.gcov` snapshot
+  deltas for one tiny case.
+
+Important boundary:
+
+- `.gcov` branch/call counters prove edge coverage, not full path coverage.
+- A controlled single-case run plus counter increases can strongly confirm a
+  small path fragment.
+- A per-instruction/access path-marker log is the preferred proof when all
+  edges are covered in aggregate but same-flow correlation matters.
 
 ## Dimension Items
 

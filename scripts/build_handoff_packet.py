@@ -140,6 +140,9 @@ def build_packet(
 ) -> dict[str, Any]:
     target = summary.get("target", {})
     handoff = target.get("handoff_defaults", {})
+    path_analysis = target.get("path_analysis", {}) if isinstance(target.get("path_analysis"), dict) else {}
+    axes = path_analysis.get("combination_axes", {}) if isinstance(path_analysis.get("combination_axes"), dict) else {}
+    confidence_levels = path_analysis.get("confidence_levels", []) if isinstance(path_analysis.get("confidence_levels"), list) else []
     candidates = [
         candidate
         for candidate in summary.get("candidates", [])
@@ -161,6 +164,18 @@ def build_packet(
                     candidate.get("entries", []),
                     max_line_evidence,
                 ),
+                "path_confidence": "TODO(agent): "
+                + " | ".join(confidence_levels or [
+                    "confirmed-not-executed",
+                    "single-case-increment-confirmed",
+                    "edge-covered-path-unknown",
+                    "needs-path-instrumentation",
+                    "out-of-scope",
+                ]),
+                "path_signature": {axis: "TODO(agent)" for axis in axes},
+                "required_evidence_points": [
+                    "TODO(agent): list must-pass line/branch/call/path-marker evidence and current status"
+                ],
                 "target_semantic": "TODO(agent): map uncovered code to an architecture-visible scenario",
                 "scope_status": "TODO(agent): in-scope | out-of-scope | needs target decision",
                 "expected_observable": "TODO(agent): register/memory/trap/CSR/vector observable",
@@ -185,6 +200,7 @@ def build_packet(
         "target_name": target.get("name"),
         "target_title": target.get("title"),
         "target_scope_out": target.get("scope_out", []),
+        "path_analysis_available": bool(path_analysis),
         "handoff_rule": "This packet is not permission to write cases. Use hyptest-workflow only after the user asks to implement.",
         "selected_candidates": packet_candidates,
     }
@@ -203,6 +219,15 @@ def print_markdown(packet: dict[str, Any]) -> None:
         print(f"- candidate_name: {candidate['candidate_name']}")
         print(f"- coverage_dimension: {candidate['coverage_dimension']}")
         print(f"- coverage_evidence: {candidate['coverage_evidence']}")
+        print(f"- path_confidence: {candidate['path_confidence']}")
+        if candidate.get("path_signature"):
+            print("- path_signature:")
+            for axis, value in candidate["path_signature"].items():
+                print(f"  - {axis}: {value}")
+        if candidate.get("required_evidence_points"):
+            print("- required_evidence_points:")
+            for item in candidate["required_evidence_points"]:
+                print(f"  - {item}")
         print(f"- target_semantic: {candidate['target_semantic']}")
         print(f"- scope_status: {candidate['scope_status']}")
         print(f"- expected_observable: {candidate['expected_observable']}")

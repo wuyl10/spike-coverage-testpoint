@@ -420,9 +420,237 @@
     "Prioritize branch/call gaps in shared paths such as riscv/mmu.cc, riscv/mmu.h, riscv/v_ext_macros.h, riscv/execute.cc, and riscv/triggers.cc over one-line instruction entry coverage.",
     "Treat scalar/vector/atomic/CBO entries as entry evidence first; inspect shared MMU/vector/trigger/fault paths before claiming semantic coverage.",
     "High-value MemBlock candidates usually need an observable memory/register/trap/CSR/vector oracle and should exercise a reusable behavior class such as alignment, boundary split, fault conversion, PMP/PMA/PBMT, trigger timing, TLB/PTE cache refresh, vector mask/vstart/fault-only-first, LR/SC reservation, AMO/AMOCAS, or CBO gating.",
+    "For path-sensitive questions, do not claim a whole execution flow was covered just because each branch was covered in aggregate. Use single-case increment evidence or path markers; otherwise mark edge-covered-path-unknown.",
     "Mark memtracer/log/device-specific paths as manual/special-run unless the default hyptest platform can observe them deterministically.",
     "Do duplicate search by semantic terms as well as mnemonics before proposing implementation."
   ],
+  "path_analysis": {
+    "purpose": "MemBlock path-aware coverage model for deciding whether a full execution flow, not only individual gcov edges, has run.",
+    "confidence_levels": [
+      "confirmed-not-executed",
+      "single-case-increment-confirmed",
+      "edge-covered-path-unknown",
+      "needs-path-instrumentation",
+      "out-of-scope"
+    ],
+    "combination_axes": {
+      "access_type": [
+        "fetch",
+        "scalar_load",
+        "scalar_store",
+        "fp_load",
+        "fp_store",
+        "vector_load",
+        "vector_store",
+        "lr",
+        "sc",
+        "amo",
+        "amocas",
+        "cbo",
+        "sfence"
+      ],
+      "instruction_form": [
+        "base",
+        "compressed",
+        "fp",
+        "vector_unit_stride",
+        "vector_strided",
+        "vector_indexed_ordered",
+        "vector_indexed_unordered",
+        "vector_fault_only_first",
+        "vector_whole_register",
+        "vector_mask_load_store",
+        "amo_word_double",
+        "amo_byte_half",
+        "amocas_width"
+      ],
+      "address_shape": [
+        "aligned",
+        "misaligned",
+        "near_page_end",
+        "cross_page",
+        "cross_cache_block",
+        "mmio_region"
+      ],
+      "translation_state": [
+        "bare_or_no_proc",
+        "stage1_tlb_hit",
+        "stage1_tlb_miss_walk",
+        "pte_ad_update",
+        "page_fault",
+        "access_fault_from_translation",
+        "sfence_or_tlb_flush"
+      ],
+      "protection_state": [
+        "pmp_allow",
+        "pmp_deny",
+        "pmp_partial_or_non_homogeneous",
+        "pma_allow",
+        "pma_deny",
+        "pbmt_io_or_non_idempotent"
+      ],
+      "exception_priority": [
+        "normal_complete",
+        "address_misaligned",
+        "load_page_fault",
+        "store_page_fault",
+        "load_access_fault",
+        "store_access_fault",
+        "trigger_before_fault",
+        "trigger_after_memory",
+        "fault_before_memory_update"
+      ],
+      "vector_state": [
+        "not_vector",
+        "mask_enabled_active_lane",
+        "mask_enabled_skipped_lane",
+        "mask_disabled",
+        "vstart_zero",
+        "vstart_nonzero",
+        "tail_policy_visible",
+        "fault_only_first_first_element",
+        "fault_only_first_later_element",
+        "partial_progress"
+      ],
+      "atomic_state": [
+        "not_atomic",
+        "lr_reservation_set",
+        "sc_success",
+        "sc_fail_no_reservation",
+        "sc_fail_intervening_store",
+        "amo_op_complete",
+        "amocas_compare_equal",
+        "amocas_compare_not_equal"
+      ],
+      "trigger_state": [
+        "no_trigger",
+        "load_trigger",
+        "store_trigger",
+        "execute_trigger",
+        "timing_before",
+        "timing_after",
+        "debug_action"
+      ]
+    },
+    "path_markers": {
+      "mem.access.fetch": {
+        "meaning": "Instruction fetch entered MemBlock/MMU access flow.",
+        "suggested_locations": [
+          "riscv/mmu.cc:fetch_slow_path",
+          "riscv/mmu.cc:perform_intrapage_fetch"
+        ]
+      },
+      "mem.access.scalar_load": {
+        "meaning": "Scalar or FP load entered MMU load flow.",
+        "suggested_locations": [
+          "riscv/mmu.h:mmu_t::load",
+          "riscv/mmu.cc:load_slow_path"
+        ]
+      },
+      "mem.access.scalar_store": {
+        "meaning": "Scalar or FP store entered MMU store flow.",
+        "suggested_locations": [
+          "riscv/mmu.h:mmu_t::store",
+          "riscv/mmu.cc:store_slow_path"
+        ]
+      },
+      "mem.access.amo": {
+        "meaning": "AMO/LR/SC/AMOCAS entered the shared atomic memory flow.",
+        "suggested_locations": [
+          "riscv/mmu.h:mmu_t::amo",
+          "riscv/mmu.h:mmu_t::load_reserved",
+          "riscv/mmu.h:mmu_t::store_conditional",
+          "riscv/mmu.h:mmu_t::amo_compare_and_swap"
+        ]
+      },
+      "mem.translate.tlb_hit": {
+        "meaning": "Access used an existing translation/cache entry.",
+        "suggested_locations": [
+          "riscv/mmu.h:tlb lookup fast path"
+        ]
+      },
+      "mem.translate.tlb_miss_walk": {
+        "meaning": "Access missed the fast translation path and walked/refilled translation state.",
+        "suggested_locations": [
+          "riscv/mmu.cc:translate",
+          "riscv/mmu.cc:walk",
+          "riscv/mmu.cc:refill_tlb"
+        ]
+      },
+      "mem.protect.pmp_deny": {
+        "meaning": "PMP/PMA/PBMT protection rejected the access.",
+        "suggested_locations": [
+          "riscv/mmu.cc:pmp/pma check branches",
+          "riscv/mmu.h:access fault conversion paths"
+        ]
+      },
+      "mem.addr.misaligned": {
+        "meaning": "The access took the address-misaligned path.",
+        "suggested_locations": [
+          "riscv/mmu.h:alignment checks",
+          "riscv/mmu.cc:misaligned load/store trap paths"
+        ]
+      },
+      "mem.addr.cross_page": {
+        "meaning": "The access spans a page boundary or needs split/boundary handling.",
+        "suggested_locations": [
+          "riscv/mmu.h:boundary checks",
+          "riscv/mmu.cc:slow path boundary handling"
+        ]
+      },
+      "mem.fault.page": {
+        "meaning": "The access raised an instruction/load/store page fault.",
+        "suggested_locations": [
+          "riscv/mmu.cc:throw_page_fault_exception"
+        ]
+      },
+      "mem.fault.access": {
+        "meaning": "The access raised an instruction/load/store access fault.",
+        "suggested_locations": [
+          "riscv/mmu.cc:throw_access_exception"
+        ]
+      },
+      "mem.trigger.match": {
+        "meaning": "A memory-related trigger matched this access.",
+        "suggested_locations": [
+          "riscv/mmu.cc:check_triggers",
+          "riscv/triggers.cc:mcontrol/simple_match"
+        ]
+      },
+      "vec.mask.skip": {
+        "meaning": "A vector memory lane was skipped by mask.",
+        "suggested_locations": [
+          "riscv/v_ext_macros.h:masked vector load/store loops"
+        ]
+      },
+      "vec.vstart.nonzero": {
+        "meaning": "Vector memory operation resumed from nonzero vstart.",
+        "suggested_locations": [
+          "riscv/v_ext_macros.h:vstart loop entry"
+        ]
+      },
+      "vec.fault.partial": {
+        "meaning": "Vector memory operation made partial progress and then faulted.",
+        "suggested_locations": [
+          "riscv/v_ext_macros.h:fault-only-first and vector fault handling"
+        ]
+      }
+    },
+    "single_case_increment": {
+      "required_practice": [
+        "Use a tiny single-purpose case: one target memory/vector/atomic instruction plus minimal setup/check when possible.",
+        "Reset coverage counters or create a before .gcov snapshot, run only that case, regenerate .gcov, then compare before/after snapshots.",
+        "Use spike -l --log-commits --log=<file> when useful to prove the target guest instruction executed.",
+        "Treat increased line/branch/call counters as evidence for required path points, not as proof of arbitrary path combinations."
+      ],
+      "interpretation": [
+        "If any must-pass line/branch/call remains zero, the full execution flow is confirmed-not-executed.",
+        "If all must-pass counters increase during a tiny single-purpose run and Spike log confirms the target instruction, mark single-case-increment-confirmed.",
+        "If counters were only covered in aggregate by a suite, mark edge-covered-path-unknown.",
+        "If internal path correlation cannot be proven by gcov increment plus log, mark needs-path-instrumentation and propose path markers."
+      ]
+    }
+  },
   "duplicate_search_terms": {
     "core shared paths": [
       "mmu",

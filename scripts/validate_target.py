@@ -36,6 +36,10 @@ REQUIRED_TOP_LEVEL = {
     "handoff_defaults",
 }
 
+OPTIONAL_TOP_LEVEL = {
+    "path_analysis",
+}
+
 REQUIRED_HANDOFF = {
     "suggested_test_point_area",
     "suggested_case_area",
@@ -101,6 +105,9 @@ def validate(path: Path) -> tuple[list[str], list[str]]:
     missing = sorted(REQUIRED_TOP_LEVEL - set(data))
     if missing:
         errors.append("missing required fields: " + ", ".join(missing))
+    unknown = sorted(set(data) - REQUIRED_TOP_LEVEL - OPTIONAL_TOP_LEVEL)
+    if unknown:
+        warnings.append("unknown top-level fields: " + ", ".join(unknown))
 
     for key in ("name", "title", "description"):
         if not isinstance(data.get(key), str) or not data.get(key):
@@ -157,7 +164,63 @@ def validate(path: Path) -> tuple[list[str], list[str]]:
     if not data.get("scope_out"):
         warnings.append("`scope_out` is empty; agent may over-propose out-of-scope tests")
 
+    path_analysis = data.get("path_analysis")
+    if path_analysis is not None:
+        validate_path_analysis(path_analysis, errors, warnings)
+
     return errors, warnings
+
+
+def validate_path_analysis(value: Any, errors: list[str], warnings: list[str]) -> None:
+    if not isinstance(value, dict):
+        errors.append("`path_analysis` must be an object when present")
+        return
+
+    axes = value.get("combination_axes", {})
+    if axes is not None:
+        if not isinstance(axes, dict):
+            errors.append("`path_analysis.combination_axes` must be an object")
+        else:
+            for name, items in axes.items():
+                if not isinstance(name, str):
+                    errors.append("`path_analysis.combination_axes` has a non-string key")
+                if not is_str_list(items):
+                    errors.append(f"`path_analysis.combination_axes.{name}` must be a list of strings")
+                elif not items:
+                    warnings.append(f"`path_analysis.combination_axes.{name}` is empty")
+
+    confidence = value.get("confidence_levels", [])
+    if confidence is not None and not is_str_list(confidence):
+        errors.append("`path_analysis.confidence_levels` must be a list of strings")
+
+    markers = value.get("path_markers", {})
+    if markers is not None:
+        if not isinstance(markers, dict):
+            errors.append("`path_analysis.path_markers` must be an object")
+        else:
+            for marker, body in markers.items():
+                if not isinstance(marker, str):
+                    errors.append("`path_analysis.path_markers` has a non-string key")
+                    continue
+                if not isinstance(body, dict):
+                    errors.append(f"`path_analysis.path_markers.{marker}` must be an object")
+                    continue
+                if not isinstance(body.get("meaning", ""), str) or not body.get("meaning"):
+                    warnings.append(f"`path_analysis.path_markers.{marker}.meaning` is missing")
+                locations = body.get("suggested_locations", [])
+                if locations is not None and not is_str_list(locations):
+                    errors.append(
+                        f"`path_analysis.path_markers.{marker}.suggested_locations` must be a list of strings"
+                    )
+
+    single_case = value.get("single_case_increment", {})
+    if single_case is not None:
+        if not isinstance(single_case, dict):
+            errors.append("`path_analysis.single_case_increment` must be an object")
+        else:
+            for key in ("required_practice", "interpretation"):
+                if key in single_case and not is_str_list(single_case.get(key)):
+                    errors.append(f"`path_analysis.single_case_increment.{key}` must be a list of strings")
 
 
 def main() -> int:
