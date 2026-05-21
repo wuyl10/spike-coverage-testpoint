@@ -215,11 +215,75 @@ ai_xxx、ai_yyy、ai_zzz。
 ```text
 summary.md          总体覆盖率结论和排名
 line.md             行/分支/call 证据
+entry_line.md       指令入口 .gcov 精查证据
 compare.md          单 case 增量覆盖证据
 path_markers.md     path marker 序列证据
 handoff.md          给 hyptest-workflow 的交接证据包
 testpoint_plan.md   agent 最终测试点分析报告
 ```
+
+### 人怎么看这些输出
+
+把输出分成两层看：
+
+```text
+cov_doc/reports/<target>/<run_tag>/   人读报告，优先看这里
+cov_runs/<target>/<run_tag>/          JSON、run.log、before/after gcov 等原始证据
+```
+
+各报告的用途：
+
+| 文件 | 给人看的含义 | 什么时候重点看 |
+|---|---|---|
+| `summary.md` | 覆盖率大盘和优先级排序：哪些维度低、哪些入口 0%、哪些 branch/call 低、哪些 target entry 在快照里缺失。 | 想快速知道“现在最缺哪里”时先看。 |
+| `line.md` | Spike 共享源码行级证据：`mmu.cc/mmu.h/v_ext_macros.h/triggers.cc/...` 里哪些函数、源码行、branch、call 没覆盖。 | 想把覆盖率数字翻译成架构场景时看。 |
+| `entry_line.md` | 具体指令入口 `.gcov` 精查证据，比如 `amoadd_b.h.gcov`、`c_lbu.h.gcov`、`vl1re16_v.h.gcov`。 | 想确认某个指令入口有没有精确行级证据时看。 |
+| `handoff.md` | 给 `hyptest-workflow` 的候选测试点交接骨架，包含 evidence、profile/gate、duplicate search terms、需要 source confirmation 的字段。 | 准备让 agent 写 case 前看。 |
+| `testpoint_plan.md` | agent 综合 `summary/line/entry/handoff/json` 后写的最终人工分析：当前情况、推荐补哪些测试场景、observable、gate note、下一步。 | 想知道“我现在该补哪些测试点”时最优先看。 |
+| `compare.md` | 单 case 前后 `.gcov` counter delta 证据，说明某个 case 是否让必需 line/branch/call 增加。 | 要确认某个 case 是否真的补到某条路径时看。 |
+| `path_markers.md` | path marker 序列证据，说明同一条动态访问/指令的 marker 序列是否出现。 | gcov 无法证明 same-flow，需要路径插桩时看。 |
+
+使用原则：
+
+- `summary.md` 负责回答“哪里低”；`line.md` 负责回答“共享源码哪里没跑”；`entry_line.md` 负责回答“具体入口有没有精确行级证据”；`testpoint_plan.md` 负责回答“建议补哪些高质量测试点”。
+- `handoff.md` 是交接包，不是最终结论。里面的 `needs source confirmation`、`needs profile decision` 是正常的，表示写 case 前还要用 `hyptest-workflow` 查重和做 profile/gate 判断。
+- `*.json` 是给脚本和 agent 后续继续分析用的结构化数据，不是主要人工阅读入口。
+- 如果只看 aggregate coverage，不能声称一条完整动态执行流跑过；要证明 same-flow，需要 `compare.md` 的单 case 增量证据，或 `path_markers.md` 的 marker 关联证据。
+
+推荐阅读顺序：
+
+```text
+快速了解现状：
+  1. testpoint_plan.md
+  2. summary.md
+  3. line.md
+
+准备写测试点：
+  1. testpoint_plan.md
+  2. handoff.md
+  3. line.md
+  4. entry_line.md
+  5. summary.json / line.json
+
+确认某个 case 是否补到覆盖：
+  1. case_matrix*/summary.md
+  2. cases/<idx>_<case>/compare.md
+  3. cases/<idx>_<case>/run.log
+  4. cases/<idx>_<case>/before_gcov 和 after_gcov
+```
+
+如果执行逐 case 矩阵，`cov_runs/<target>/<run_tag>/case_matrix_*` 下面会多出：
+
+```text
+summary.md / summary.json
+cases/<idx>_<case>/run.log
+cases/<idx>_<case>/compare.md
+cases/<idx>_<case>/compare.json
+cases/<idx>_<case>/before_gcov/
+cases/<idx>_<case>/after_gcov/
+```
+
+其中 `case_matrix*/summary.md` 看所有 case 的总览，单个 case 的 `compare.md` 看具体 counter movement，`run.log` 看 Spike 执行证据，`before_gcov/after_gcov` 用来追溯原始快照。
 
 一次好的分析应该至少包含：
 
