@@ -102,7 +102,7 @@
         "Does not run analysis with an implicit all-riscv/default target.",
         "Asks for or proposes a target file before coverage analysis.",
         "Mentions required fields including spec, scope_in, scope_out, and dimensions.",
-        "Mentions optional path_analysis when the goal involves path-sensitive execution-flow coverage.",
+        "Mentions optional path_analysis as evidence policy/reporting checklist when the goal involves path-sensitive execution-flow coverage.",
         "Mentions validate_target.py as the check after creating or editing a target.",
         "Keeps scripts evidence-only and agent-owned semantic judgment."
       ]
@@ -125,12 +125,13 @@
     {
       "id": 7,
       "prompt": "我要判断 MemBlock 某条执行流有没有真的跑过，不是只看每个 branch 是否分别覆盖。用 targets/memblock_non_h.json，说明怎么用单 case 增量覆盖和 path marker 判断。",
-      "expected_output": "Builds a path signature from target path_analysis, explains gcov aggregate branch coverage limitations, proposes single-case before/after .gcov comparison, and recommends path markers when same-flow correlation cannot be proven.",
+      "expected_output": "Builds a path signature from Spike source/gcov evidence using target path_analysis only as evidence policy/reporting checklist, explains gcov aggregate branch coverage limitations, proposes single-case before/after .gcov comparison, and recommends path markers when same-flow correlation cannot be proven.",
       "files": [
         "/nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/memblock_non_h.json"
       ],
       "assertions": [
-        "Uses target path_analysis rather than hardcoding MemBlock axes in the skill body.",
+        "Uses target path_analysis as guardrails and does not treat it as a complete MemBlock path matrix.",
+        "Does not invent path combinations from predeclared axes; derives path signatures from source/gcov evidence.",
         "Explains that aggregate branch/call coverage is not full path coverage.",
         "Defines confidence labels such as confirmed-not-executed, single-case-increment-confirmed, edge-covered-path-unknown, and needs-path-instrumentation.",
         "Uses or recommends compare_gcov_snapshots.py for before/after .gcov deltas.",

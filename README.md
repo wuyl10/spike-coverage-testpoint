@@ -103,7 +103,7 @@ expected observable、duplicate search terms、gate note。
 ```text
 用 spike-coverage-testpoint 做 path-aware 分析。
 目标用 targets/memblock_non_h.json。
-场景是：<写清 access_type / instruction_form / address_shape / translation / protection / exception/vector/atomic/trigger 状态>。
+场景是：<用自然语言写清目标执行流，不要先枚举组合矩阵>。
 请先用 gcov/source 找这条路径的 must-pass line/branch/call evidence，
 再判断是 confirmed-not-executed、edge-covered-path-unknown、single-case-increment-confirmed，
 还是 needs-path-instrumentation。
@@ -151,7 +151,7 @@ after gcov 目录：<after_gcov_dir>。
 - 高优先级缺口：按维度排序，带 line/branch/call/0% entry 证据。
 - 行级证据：具体 `.gcov` 文件、源码行、函数、miss kind。
 - 路径置信度：`confirmed-not-executed`、`single-case-increment-confirmed`、`edge-covered-path-unknown`、`needs-path-instrumentation` 或 `out-of-scope`。
-- 路径签名：access type、instruction form、地址形态、翻译/PMP/PMA/PBMT、异常优先级、vector/atomic/trigger 状态。
+- 路径签名：从 Spike 源码和 `.gcov` 证据反推的目标入口、共享函数路径、must-pass 证据点、源码证明的条件、observable、剩余不确定性。
 - 测试点候选：missing scenario、test idea、observable、gate note。
 - 查重提示：应该在 hyptest 里搜哪些关键词。
 - handoff packet：后续交给 `hyptest-workflow` 写 case。
@@ -235,7 +235,7 @@ python3 scripts/analyze_path_markers.py \
 - `scope_in`
 - `scope_out`
 - `dimensions`
-- `path_analysis`：可选。组合轴、路径置信度、单 case 增量规则、path marker 词表。
+- `path_analysis`：可选。证据策略、路径报告字段 checklist、路径置信度、单 case 增量规则、path marker 词表。它不是完整路径矩阵。
 - `inspection_hints`
 - `duplicate_search_terms`
 
@@ -246,4 +246,5 @@ python3 scripts/analyze_path_markers.py \
 - 覆盖率只是证据，不是测试意图。
 - `insns/*.h` 入口覆盖只能说明指令入口有没有跑到，语义仍要结合共享路径源码判断。
 - branch/call 覆盖是聚合边计数，不等于完整路径覆盖；同一条执行流需要单 case 增量证据或 path marker 证据。
+- 不要从 target 里的字段枚举“理论组合”来生成测试点；必须从 Spike 源码、`.gcov`、单 case 增量或 marker 记录反推真实路径。
 - 生成 case、修改 `test_point`、注册 `test_register.c` 时，应切到 `hyptest-workflow` skill。

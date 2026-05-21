@@ -433,105 +433,23 @@
       "needs-path-instrumentation",
       "out-of-scope"
     ],
-    "combination_axes": {
-      "access_type": [
-        "fetch",
-        "scalar_load",
-        "scalar_store",
-        "fp_load",
-        "fp_store",
-        "vector_load",
-        "vector_store",
-        "lr",
-        "sc",
-        "amo",
-        "amocas",
-        "cbo",
-        "sfence"
-      ],
-      "instruction_form": [
-        "base",
-        "compressed",
-        "fp",
-        "vector_unit_stride",
-        "vector_strided",
-        "vector_indexed_ordered",
-        "vector_indexed_unordered",
-        "vector_fault_only_first",
-        "vector_whole_register",
-        "vector_mask_load_store",
-        "amo_word_double",
-        "amo_byte_half",
-        "amocas_width"
-      ],
-      "address_shape": [
-        "aligned",
-        "misaligned",
-        "near_page_end",
-        "cross_page",
-        "cross_cache_block",
-        "mmio_region"
-      ],
-      "translation_state": [
-        "bare_or_no_proc",
-        "stage1_tlb_hit",
-        "stage1_tlb_miss_walk",
-        "pte_ad_update",
-        "page_fault",
-        "access_fault_from_translation",
-        "sfence_or_tlb_flush"
-      ],
-      "protection_state": [
-        "pmp_allow",
-        "pmp_deny",
-        "pmp_partial_or_non_homogeneous",
-        "pma_allow",
-        "pma_deny",
-        "pbmt_io_or_non_idempotent"
-      ],
-      "exception_priority": [
-        "normal_complete",
-        "address_misaligned",
-        "load_page_fault",
-        "store_page_fault",
-        "load_access_fault",
-        "store_access_fault",
-        "trigger_before_fault",
-        "trigger_after_memory",
-        "fault_before_memory_update"
-      ],
-      "vector_state": [
-        "not_vector",
-        "mask_enabled_active_lane",
-        "mask_enabled_skipped_lane",
-        "mask_disabled",
-        "vstart_zero",
-        "vstart_nonzero",
-        "tail_policy_visible",
-        "fault_only_first_first_element",
-        "fault_only_first_later_element",
-        "partial_progress"
-      ],
-      "atomic_state": [
-        "not_atomic",
-        "lr_reservation_set",
-        "sc_success",
-        "sc_fail_no_reservation",
-        "sc_fail_intervening_store",
-        "amo_op_complete",
-        "amocas_compare_equal",
-        "amocas_compare_not_equal"
-      ],
-      "trigger_state": [
-        "no_trigger",
-        "load_trigger",
-        "store_trigger",
-        "execute_trigger",
-        "timing_before",
-        "timing_after",
-        "debug_action"
-      ]
-    },
+    "evidence_policy": [
+      "Do not treat path_analysis as a complete path matrix or architecture specification.",
+      "Derive path signatures from Spike source and gcov evidence; do not invent combinations from a predeclared Cartesian product.",
+      "Use path_signature_fields only as a reporting checklist.",
+      "If all relevant edges are covered only in aggregate, mark edge-covered-path-unknown.",
+      "Use single-case increment evidence or per-instruction/access path markers before claiming same-flow path coverage."
+    ],
+    "path_signature_fields": [
+      "target instruction or entry",
+      "shared Spike function path",
+      "must-pass source line/branch/call evidence",
+      "address/translation/protection condition only when proven from source",
+      "exception/fault/trigger condition only when proven from source",
+      "vector/atomic condition only when proven from source",
+      "architectural observable",
+      "remaining uncertainty or reason path markers are needed"
+    ],
     "path_markers": {
       "mem.access.fetch": {
         "meaning": "Instruction fetch entered MemBlock/MMU access flow.",

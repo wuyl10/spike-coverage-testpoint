@@ -24,16 +24,12 @@ Limits:
 1. Build a path signature:
 
 ```text
-access_type:
-instruction_form:
-address_shape:
-translation_state:
-protection_state:
-exception_priority:
-vector_state:
-atomic_state:
-trigger_state:
-observable:
+target instruction or entry:
+shared source function path:
+must-pass source line/branch/call evidence:
+source-proven condition under test:
+architectural observable:
+remaining uncertainty:
 ```
 
 2. Identify must-pass evidence points from source/gcov:

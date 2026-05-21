@@ -47,7 +47,7 @@
     "Keep target-specific spec assumptions here."
   ],
   "path_analysis": {
-    "purpose": "Optional path-aware coverage model. Use this to describe the execution-flow axes and marker vocabulary the agent should use when gcov branch/call coverage is not enough.",
+    "purpose": "Optional path-aware evidence policy. Use this to describe how the agent should report and prove execution-flow coverage when gcov branch/call coverage is not enough.",
     "confidence_levels": [
       "confirmed-not-executed",
       "single-case-increment-confirmed",
@@ -55,12 +55,21 @@
       "needs-path-instrumentation",
       "out-of-scope"
     ],
-    "combination_axes": {
-      "axis_name": [
-        "value_a",
-        "value_b"
-      ]
-    },
+    "evidence_policy": [
+      "Do not treat path_analysis as a complete path matrix or architecture specification.",
+      "Derive path signatures from Spike source and gcov evidence; do not invent combinations from a predeclared Cartesian product.",
+      "Use path_signature_fields only as a reporting checklist.",
+      "If all relevant edges are covered only in aggregate, mark edge-covered-path-unknown.",
+      "Use single-case increment evidence or per-instruction/access path markers before claiming same-flow path coverage."
+    ],
+    "path_signature_fields": [
+      "target instruction or entry",
+      "shared source function path",
+      "must-pass source line/branch/call evidence",
+      "source-proven condition under test",
+      "architectural observable",
+      "remaining uncertainty"
+    ],
     "path_markers": {
       "marker.name": {
         "meaning": "What this marker proves when emitted by an instrumented Spike.",

@@ -425,9 +425,9 @@ def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
     if target["source_priority"]:
         print(f"- source priority: {'; '.join(target['source_priority'])}")
     if target.get("path_analysis"):
-        axes = target["path_analysis"].get("combination_axes", {})
-        if isinstance(axes, dict) and axes:
-            print(f"- path axes: {'; '.join(axes.keys())}")
+        fields = target["path_analysis"].get("path_signature_fields", [])
+        if isinstance(fields, list) and fields:
+            print(f"- path signature checklist: {'; '.join(fields)}")
     print()
 
     print("## Dimension coverage evidence")

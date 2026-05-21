@@ -1,6 +1,6 @@
 ---
 name: spike-coverage-testpoint
-description: Analyze official/community Spike coverage from gcov/gcovr/.gcov/.gcda/.gcno/coverage HTML and convert low or zero coverage into evidence-backed, high-quality hyptest test-point plans. Must use whenever the user asks to inspect Spike coverage, coverage gaps, low line/branch/call coverage, path-sensitive MemBlock coverage, single-case incremental coverage, path-marker instrumentation, or what riscv-hyp-tests/hyptest tests should be added from Spike coverage. Always use a target file under targets/*.json, or create one from targets/TEMPLATE.json, so concrete scope/spec/exclusions/path axes stay outside the skill body. The bundled scripts only extract and rank coverage evidence; the agent must judge what architecture scenario/path the uncovered code represents, whether it is worth testing, and how to design the test point. If the user wants to add or modify ai_test_cases/manual_test_cases/test_point/test_register.c, also use hyptest-workflow for implementation.
+description: Analyze official/community Spike coverage from gcov/gcovr/.gcov/.gcda/.gcno/coverage HTML and convert low or zero coverage into evidence-backed, high-quality hyptest test-point plans. Must use whenever the user asks to inspect Spike coverage, coverage gaps, low line/branch/call coverage, path-sensitive MemBlock coverage, single-case incremental coverage, path-marker instrumentation, or what riscv-hyp-tests/hyptest tests should be added from Spike coverage. Always use a target file under targets/*.json, or create one from targets/TEMPLATE.json, so concrete scope/spec/exclusions/path evidence policy stay outside the skill body. The bundled scripts only extract and rank coverage evidence; the agent must judge what architecture scenario/path the uncovered code represents, whether it is worth testing, and how to design the test point. If the user wants to add or modify ai_test_cases/manual_test_cases/test_point/test_register.c, also use hyptest-workflow for implementation.
 ---
 
 # Spike Coverage Testpoint
@@ -28,7 +28,7 @@ target 文件负责：
 - `summary_include_regex` / `summary_exclude_prefixes` / `summary_exclude_regex`: summary 级别证据过滤。
 - `line_exclude_regex`: `.gcov` 行级证据过滤。
 - `dimensions`: 脚本分组用的覆盖维度。
-- `path_analysis`: 可选。路径敏感分析用的组合轴、置信度、单 case 增量规则、path marker 词表。具体目标的路径轴放这里，不写进 skill 正文。
+- `path_analysis`: 可选。路径敏感分析用的证据策略、报告字段 checklist、置信度、单 case 增量规则、path marker 词表。它不是完整路径矩阵，不允许 agent 从这里脑补组合。
 - `analysis_notes` / `duplicate_search_terms`: agent 做场景解释和查重时使用的目标专用信息。
 
 如果用户说“我要分析 X，不包含 Y”，先检查是否已有合适 target；没有就复制模板新建 target。后续脚本、报告、交接包都引用这个 target。
@@ -75,8 +75,8 @@ Use these rules whenever the user cares about execution paths, combinations, or 
   - `edge-covered-path-unknown`: relevant edges have aggregate coverage, but no evidence proves they occurred in the same instruction/access flow.
   - `needs-path-instrumentation`: internal path correlation cannot be proven from gcov plus Spike logs; propose target-defined path markers.
   - `out-of-scope`: the path belongs to `scope_out`.
-- For path-sensitive MemBlock work, ask the agent to build a **path signature** before proposing a case: access type, instruction form, address shape, translation state, protection state, exception priority, vector/atomic/trigger state, and observable.
-- Use `path_analysis.combination_axes` and `path_analysis.path_markers` from the selected target when present. Do not invent permanent MemBlock axes in `SKILL.md`; if a target needs better axes, edit the target file.
+- For path-sensitive work, build a **path signature from source/gcov evidence** before proposing a case. Use `path_analysis.path_signature_fields` only as a reporting checklist; do not treat it as a complete architecture matrix.
+- Apply `path_analysis.evidence_policy` and `path_analysis.path_markers` from the selected target when present. Do not invent path combinations from target JSON; derive them from Spike source, `.gcov`, single-case deltas, or path-marker records.
 - Prefer tiny single-purpose cases for increment confirmation. If one case contains loops or many similar memory instructions, mark confidence lower because counter deltas may come from different dynamic instructions.
 - Path-marker instrumentation is for coverage Spike only. Keep it gated by a build flag, runtime option, or environment variable, and do not require it for normal Spike or default hyptest gates.
 
@@ -164,11 +164,13 @@ If the user provides different paths, use those.
 
 6. **For path-sensitive questions, build and verify a path signature**
    - Read `path_analysis` from the target when present.
-   - List the path signature axes and must-pass evidence points:
-     - entry/instruction form
-     - shared MMU/vector/atomic/trigger functions
+   - List a path signature from evidence, using `path_signature_fields` only as a checklist:
+     - target instruction/entry
+     - shared source function path
      - required line/branch/call events
+     - source-proven condition under test
      - expected architectural observable
+     - remaining uncertainty
    - If any must-pass event is zero in the suite `.gcov`, mark `confirmed-not-executed`.
    - If all events have aggregate coverage but no same-flow proof, mark `edge-covered-path-unknown`.
    - To confirm a specific tiny case, take before/after `.gcov` snapshots and run `compare_gcov_snapshots.py`; use Spike `-l --log-commits --log=<file>` when useful.
@@ -348,15 +350,12 @@ selected_candidates:
     source_or_gcov_evidence:
     path_confidence: confirmed-not-executed | single-case-increment-confirmed | edge-covered-path-unknown | needs-path-instrumentation | out-of-scope
     path_signature:
-      access_type:
-      instruction_form:
-      address_shape:
-      translation_state:
-      protection_state:
-      exception_priority:
-      vector_state:
-      atomic_state:
-      trigger_state:
+      target_instruction_or_entry:
+      shared_source_function_path:
+      must_pass_source_evidence:
+      source_proven_condition_under_test:
+      architectural_observable:
+      remaining_uncertainty:
     required_evidence_points:
       - file:
         kind: line | branch | call | path-marker

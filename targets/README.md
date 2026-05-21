@@ -28,9 +28,9 @@ not in `SKILL.md` and not hardcoded in scripts.
 - `line_priority_regex`: optional ranking hints for `inspect_gcov_lines.py`.
   Matching functions are printed earlier, without hiding non-matching evidence.
 - `dimensions`: coverage groups used by `analyze_spike_gcov.py`.
-- `path_analysis`: optional path-sensitive model. Use it for combination axes,
-  path confidence labels, single-case increment rules, and path-marker names.
-  Put target-specific path axes here, not in `SKILL.md` or scripts.
+- `path_analysis`: optional path-sensitive evidence policy. Use it for path
+  confidence labels, reporting checklists, single-case increment rules, and
+  path-marker names. It is not a complete path matrix or architecture spec.
 - `analysis_notes`: optional target-specific interpretation guidance for the
   agent. Keep spec assumptions here, alongside the rest of the target.
 - `source_priority`: source files the agent should inspect first when turning
@@ -52,16 +52,20 @@ test-point card.
 ## Path Analysis
 
 Use `path_analysis` when branch/call coverage is not enough to prove the same
-dynamic instruction/access executed a full path.
+dynamic instruction/access executed a full path. Keep it evidence-driven:
+derive path signatures from Spike source and `.gcov`, not from a predeclared
+Cartesian product.
 
 Recommended subfields:
 
 - `confidence_levels`: labels such as `confirmed-not-executed`,
   `single-case-increment-confirmed`, `edge-covered-path-unknown`,
   `needs-path-instrumentation`, and `out-of-scope`.
-- `combination_axes`: target-specific path axes. For MemBlock this may include
-  access type, instruction form, address shape, translation state, protection
-  state, exception priority, vector state, atomic state, and trigger state.
+- `evidence_policy`: guardrails that prevent over-inference from aggregate
+  branch/call coverage.
+- `path_signature_fields`: a reporting checklist for the agent. These fields
+  guide how to describe a source-proven path; they are not enumerated values to
+  combine blindly.
 - `path_markers`: marker names plus meanings and suggested Spike source
   locations for coverage-only instrumentation.
 - `single_case_increment`: how to interpret before/after `.gcov` snapshot

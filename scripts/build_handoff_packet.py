@@ -141,7 +141,11 @@ def build_packet(
     target = summary.get("target", {})
     handoff = target.get("handoff_defaults", {})
     path_analysis = target.get("path_analysis", {}) if isinstance(target.get("path_analysis"), dict) else {}
-    axes = path_analysis.get("combination_axes", {}) if isinstance(path_analysis.get("combination_axes"), dict) else {}
+    signature_fields = (
+        path_analysis.get("path_signature_fields", [])
+        if isinstance(path_analysis.get("path_signature_fields"), list)
+        else []
+    )
     confidence_levels = path_analysis.get("confidence_levels", []) if isinstance(path_analysis.get("confidence_levels"), list) else []
     candidates = [
         candidate
@@ -172,7 +176,7 @@ def build_packet(
                     "needs-path-instrumentation",
                     "out-of-scope",
                 ]),
-                "path_signature": {axis: "TODO(agent)" for axis in axes},
+                "path_signature": {field: "TODO(agent): derive from source/gcov evidence" for field in signature_fields},
                 "required_evidence_points": [
                     "TODO(agent): list must-pass line/branch/call/path-marker evidence and current status"
                 ],

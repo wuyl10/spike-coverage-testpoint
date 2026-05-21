@@ -176,22 +176,23 @@ def validate_path_analysis(value: Any, errors: list[str], warnings: list[str]) -
         errors.append("`path_analysis` must be an object when present")
         return
 
-    axes = value.get("combination_axes", {})
-    if axes is not None:
-        if not isinstance(axes, dict):
-            errors.append("`path_analysis.combination_axes` must be an object")
-        else:
-            for name, items in axes.items():
-                if not isinstance(name, str):
-                    errors.append("`path_analysis.combination_axes` has a non-string key")
-                if not is_str_list(items):
-                    errors.append(f"`path_analysis.combination_axes.{name}` must be a list of strings")
-                elif not items:
-                    warnings.append(f"`path_analysis.combination_axes.{name}` is empty")
+    if "combination_axes" in value:
+        warnings.append(
+            "`path_analysis.combination_axes` is discouraged; prefer evidence_policy and "
+            "path_signature_fields so the agent derives paths from source/gcov evidence"
+        )
 
     confidence = value.get("confidence_levels", [])
     if confidence is not None and not is_str_list(confidence):
         errors.append("`path_analysis.confidence_levels` must be a list of strings")
+
+    for key in ("evidence_policy", "path_signature_fields"):
+        if key in value and not is_str_list(value.get(key)):
+            errors.append(f"`path_analysis.{key}` must be a list of strings")
+    if not value.get("evidence_policy"):
+        warnings.append("`path_analysis.evidence_policy` is missing; path analysis may over-infer")
+    if not value.get("path_signature_fields"):
+        warnings.append("`path_analysis.path_signature_fields` is missing; handoff path signatures will be sparse")
 
     markers = value.get("path_markers", {})
     if markers is not None:

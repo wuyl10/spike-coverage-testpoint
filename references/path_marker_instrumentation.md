@@ -86,7 +86,7 @@ Use target-specific marker names from `targets/memblock_non_h.json`.
 
 ## Workflow
 
-1. Define the path signature from the target's `combination_axes`.
+1. Define the path signature from Spike source and `.gcov` evidence, using the target's `path_signature_fields` only as a reporting checklist.
 2. Choose required markers from `path_markers`.
 3. Run one tiny case with coverage Spike path markers enabled.
 4. Analyze the log:
