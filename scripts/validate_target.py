@@ -42,6 +42,7 @@ OPTIONAL_TOP_LEVEL = {
     "manual_only_dimensions",
     "dimension_metadata",
     "duplicate_search_aliases",
+    "coverage_thresholds",
 }
 
 REQUIRED_HANDOFF = {
@@ -82,6 +83,52 @@ def check_str_list_map(data: dict[str, Any], key: str, errors: list[str]) -> Non
             errors.append(f"`{key}` has a non-string key")
         if not is_str_list(items):
             errors.append(f"`{key}.{name}` must be a list of strings")
+
+
+def check_dimension_metadata(data: dict[str, Any], errors: list[str], warnings: list[str]) -> None:
+    metadata = data.get("dimension_metadata")
+    if metadata is None:
+        return
+    if not isinstance(metadata, dict):
+        errors.append("`dimension_metadata` must be an object when present")
+        return
+
+    allowed_keys = {"default_gate_allowed", "requires_runtime_option", "gate_note"}
+    for dim, body in metadata.items():
+        if not isinstance(dim, str):
+            errors.append("`dimension_metadata` has a non-string key")
+            continue
+        if not isinstance(body, dict):
+            errors.append(f"`dimension_metadata.{dim}` must be an object")
+            continue
+        unknown = sorted(set(body) - allowed_keys)
+        if unknown:
+            warnings.append(f"`dimension_metadata.{dim}` has unknown fields: " + ", ".join(unknown))
+        if "default_gate_allowed" in body and not isinstance(body["default_gate_allowed"], bool):
+            errors.append(f"`dimension_metadata.{dim}.default_gate_allowed` must be a boolean")
+        if "requires_runtime_option" in body and not isinstance(body["requires_runtime_option"], bool):
+            errors.append(f"`dimension_metadata.{dim}.requires_runtime_option` must be a boolean")
+        if "gate_note" in body and not isinstance(body["gate_note"], str):
+            errors.append(f"`dimension_metadata.{dim}.gate_note` must be a string")
+
+
+def check_coverage_thresholds(data: dict[str, Any], errors: list[str], warnings: list[str]) -> None:
+    thresholds = data.get("coverage_thresholds")
+    if thresholds is None:
+        return
+    if not isinstance(thresholds, dict):
+        errors.append("`coverage_thresholds` must be an object when present")
+        return
+    allowed = {"low_line_pct", "low_branch_pct", "low_call_pct"}
+    unknown = sorted(set(thresholds) - allowed)
+    if unknown:
+        warnings.append("`coverage_thresholds` has unknown fields: " + ", ".join(unknown))
+    for key in allowed & set(thresholds):
+        value = thresholds[key]
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            errors.append(f"`coverage_thresholds.{key}` must be a number")
+        elif value < 0 or value > 100:
+            errors.append(f"`coverage_thresholds.{key}` must be between 0 and 100")
 
 
 def check_dimension_item(item: str, dim: str, errors: list[str]) -> None:
@@ -131,12 +178,14 @@ def validate(path: Path) -> tuple[list[str], list[str]]:
 
     check_str_list_map(data, "duplicate_search_terms", errors)
     check_str_list_map(data, "inspection_hints", errors)
+    if "duplicate_search_aliases" in data:
+        check_str_list_map(data, "duplicate_search_aliases", errors)
     if "special_run_scope" in data:
         check_str_list(data, "special_run_scope", errors)
     if "manual_only_dimensions" in data:
         check_str_list(data, "manual_only_dimensions", errors)
-    if "dimension_metadata" in data and not isinstance(data.get("dimension_metadata"), dict):
-        errors.append("`dimension_metadata` must be an object when present")
+    check_dimension_metadata(data, errors, warnings)
+    check_coverage_thresholds(data, errors, warnings)
 
     dimensions = data.get("dimensions")
     if not isinstance(dimensions, dict) or not dimensions:
@@ -166,6 +215,35 @@ def validate(path: Path) -> tuple[list[str], list[str]]:
             extra_metadata = sorted(set(metadata) - set(dimensions))
             if extra_metadata:
                 warnings.append("dimension_metadata without matching dimensions: " + ", ".join(extra_metadata))
+        aliases = data.get("duplicate_search_aliases", {})
+        if isinstance(aliases, dict):
+            extra_aliases = sorted(set(aliases) - set(dimensions))
+            if extra_aliases:
+                warnings.append("duplicate_search_aliases without matching dimensions: " + ", ".join(extra_aliases))
+            alias_values = {
+                alias
+                for values in aliases.values()
+                if is_str_list(values)
+                for alias in values
+            }
+        else:
+            alias_values = set()
+        special_scope = data.get("special_run_scope", [])
+        if is_str_list(special_scope):
+            unmatched_special = sorted(set(special_scope) - set(dimensions) - alias_values)
+            if unmatched_special:
+                warnings.append(
+                    "special_run_scope entries are not exact dimensions or duplicate_search_aliases and will not gate by name: "
+                    + ", ".join(unmatched_special)
+                )
+        terms = data.get("duplicate_search_terms", {})
+        if isinstance(terms, dict):
+            extra_terms = sorted(set(terms) - set(dimensions))
+            if extra_terms:
+                warnings.append(
+                    "duplicate_search_terms without matching dimensions; use duplicate_search_aliases or document as semantic aliases: "
+                    + ", ".join(extra_terms)
+                )
     else:
         errors.append("each `dimensions.*` value must be a list of strings")
 

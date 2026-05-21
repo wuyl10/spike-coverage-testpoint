@@ -269,6 +269,83 @@ def event_matches_focus(event: EventDelta, focus_terms: list[str]) -> bool:
     return any(term.lower() in haystack for term in focus_terms)
 
 
+def load_requirements(path: Path | None, cli_items: list[str]) -> list[dict[str, Any]]:
+    requirements: list[dict[str, Any]] = []
+    if path:
+        data = json.loads(path.read_text(errors="replace"))
+        if isinstance(data, dict):
+            data = data.get("requirements", [])
+        if not isinstance(data, list):
+            raise TypeError("requirements JSON must be a list or an object with a `requirements` list")
+        for item in data:
+            if not isinstance(item, dict):
+                raise TypeError("each requirement must be an object")
+            requirements.append(dict(item))
+    for raw in cli_items:
+        parts = raw.split(":")
+        if len(parts) < 3:
+            raise ValueError("--require-event format is file:kind:line[:ordinal]")
+        req: dict[str, Any] = {"file": parts[0], "kind": parts[1], "source_line": int(parts[2])}
+        if len(parts) >= 4 and parts[3]:
+            req["ordinal"] = int(parts[3])
+        requirements.append(req)
+    return requirements
+
+
+def requirement_matches_delta(requirement: dict[str, Any], delta: EventDelta) -> bool:
+    if requirement.get("file") and Path(str(requirement["file"])).name != Path(delta.file).name:
+        return False
+    if requirement.get("kind") and str(requirement["kind"]) != delta.kind:
+        return False
+    if requirement.get("source_line") is not None and int(requirement["source_line"]) != delta.source_line:
+        return False
+    if requirement.get("ordinal") is not None and int(requirement["ordinal"]) != delta.ordinal:
+        return False
+    if requirement.get("source_contains") and str(requirement["source_contains"]) not in delta.source_code:
+        return False
+    if requirement.get("function_contains") and str(requirement["function_contains"]) not in (delta.function or ""):
+        return False
+    return True
+
+
+def evaluate_requirements(requirements: list[dict[str, Any]], deltas: list[EventDelta]) -> dict[str, Any]:
+    pass_statuses = {"newly-covered", "increased", "unchanged-covered"}
+    hard_fail_statuses = {
+        "still-zero",
+        "missing-after-event",
+        "decreased-or-reset",
+        "not-comparable-counter-format",
+        "unknown",
+    }
+    items: list[dict[str, Any]] = []
+    for idx, requirement in enumerate(requirements, start=1):
+        matches = [delta for delta in deltas if requirement_matches_delta(requirement, delta)]
+        passing = [delta for delta in matches if delta.status in pass_statuses]
+        hard_fails = [delta for delta in matches if delta.status in hard_fail_statuses]
+        if passing and not hard_fails:
+            status = "passed"
+        elif matches:
+            status = "failed"
+        else:
+            status = "missing"
+        items.append(
+            {
+                "id": requirement.get("id", f"req-{idx}"),
+                "requirement": requirement,
+                "status": status,
+                "matched_events": [asdict(delta) for delta in matches[:8]],
+            }
+        )
+    return {
+        "all_required_passed": bool(requirements) and all(item["status"] == "passed" for item in items),
+        "requirement_count": len(requirements),
+        "passed": sum(1 for item in items if item["status"] == "passed"),
+        "failed": sum(1 for item in items if item["status"] == "failed"),
+        "missing": sum(1 for item in items if item["status"] == "missing"),
+        "items": items,
+    }
+
+
 def counter_format_comparable(counter_format: str | None) -> bool:
     return counter_format in {"count", "never", "synthetic-zero"}
 
@@ -464,6 +541,23 @@ def print_markdown(result: dict[str, Any], limit: int) -> None:
             )
         print()
 
+    if result.get("requirements"):
+        req = result["requirements"]
+        print("## Required evidence points")
+        print()
+        print(f"- all_required_passed: {req['all_required_passed']}")
+        print(f"- passed: {req['passed']} / {req['requirement_count']}")
+        print(f"- failed: {req['failed']}")
+        print(f"- missing: {req['missing']}")
+        print()
+        print("| ID | Status | Requirement | Matched statuses |")
+        print("|---|---|---|---|")
+        for item in req["items"][:limit]:
+            requirement = json.dumps(item["requirement"], ensure_ascii=False, sort_keys=True)
+            statuses = ", ".join(sorted({event["status"] for event in item["matched_events"]})) or "-"
+            print(f"| `{item['id']}` | {item['status']} | `{requirement}` | `{statuses}` |")
+        print()
+
     for title, statuses in (
         ("Newly covered", {"newly-covered"}),
         ("Increased", {"increased"}),
@@ -510,6 +604,13 @@ def main() -> int:
     parser.add_argument("--file", action="append", default=[], help=".gcov file name to compare; can be repeated")
     parser.add_argument("--target", type=Path, help="target JSON; uses line_exclude_regex for filtering")
     parser.add_argument("--focus", action="append", default=[], help="substring filter on file/source/kind; can be repeated")
+    parser.add_argument("--requirements-json", type=Path, help="JSON requirements that must be covered for this path")
+    parser.add_argument(
+        "--require-event",
+        action="append",
+        default=[],
+        help="must-pass event shorthand file:kind:line[:ordinal]; can be repeated",
+    )
     parser.add_argument(
         "--key-mode",
         choices=("stable-line", "function-aware"),
@@ -546,6 +647,8 @@ def main() -> int:
     deltas = compare_events(before_events, after_events, args.missing_before_zero)
     deltas = [delta for delta in deltas if event_matches_focus(delta, args.focus)]
     deltas = sorted(deltas, key=rank_delta)
+    requirements = load_requirements(args.requirements_json, args.require_event)
+    requirement_result = evaluate_requirements(requirements, deltas)
 
     result = {
         "before_dir": str(args.before_dir),
@@ -556,6 +659,7 @@ def main() -> int:
         "missing_before_files": missing_before,
         "missing_after_files": missing_after,
         "summary": summarize(deltas, missing_before, missing_after),
+        "requirements": requirement_result,
         "deltas": [asdict(delta) for delta in deltas],
         "interpretation_rule": (
             "newly-covered/increased confirms counter movement for a required edge/call/line in this "

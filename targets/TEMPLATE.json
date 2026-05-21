@@ -26,6 +26,11 @@
   "line_priority_regex": [
     "regex terms that should rank line-level functions higher for this target"
   ],
+  "coverage_thresholds": {
+    "low_line_pct": 20.0,
+    "low_branch_pct": 10.0,
+    "low_call_pct": 10.0
+  },
   "source_priority": [
     "riscv/example.cc"
   ],
@@ -119,7 +124,18 @@
     "default_gate_note": "needs profile decision",
     "implementation_owner": "hyptest-workflow"
   },
-  "special_run_scope": [],
-  "manual_only_dimensions": [],
-  "dimension_metadata": {}
+  "special_run_scope": [
+    "example shared paths"
+  ],
+  "manual_only_dimensions": [
+    "example shared paths"
+  ],
+  "dimension_metadata": {
+    "example shared paths": {
+      "default_gate_allowed": false,
+      "requires_runtime_option": true,
+      "gate_note": "manual/special-run unless the selected platform makes this deterministic"
+    }
+  },
+  "duplicate_search_aliases": {}
 }

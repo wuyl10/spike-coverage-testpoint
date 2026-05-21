@@ -47,6 +47,19 @@ DEFAULT_GATE_YES_RE = re.compile(
     re.IGNORECASE,
 )
 
+GENERIC_NEEDS_SOURCE_RE = re.compile(
+    r"needs source confirmation:\s*(map uncovered code to an architecture-visible scenario|"
+    r"register/memory/trap/CSR/vector observable|"
+    r"choose one after evidence review|"
+    r"derive this field from source/gcov/path-marker evidence|"
+    r"list must-pass line/branch/call/path-marker evidence and current status|"
+    r"in-scope \| out-of-scope \| needs target decision|"
+    r"infer required ISA/profile feature from source and representative entries|"
+    r"yes/no/unknown after confirming feature availability and deterministic observable|"
+    r"interpret .+ as an architecture-visible scenario)",
+    re.IGNORECASE,
+)
+
 
 def check_file(path: Path) -> list[str]:
     findings: list[str] = []
@@ -58,7 +71,7 @@ def check_file(path: Path) -> list[str]:
     return findings
 
 
-def strict_handoff_check(path: Path) -> list[str]:
+def strict_handoff_check(path: Path, final_report: bool = False) -> list[str]:
     findings: list[str] = []
     text = path.read_text(errors="replace")
     required_terms = [
@@ -71,6 +84,8 @@ def strict_handoff_check(path: Path) -> list[str]:
     for term in required_terms:
         if term not in text:
             findings.append(f"{path}: strict-handoff: missing `{term}`")
+    if "same_flow_evidence" not in text:
+        findings.append(f"{path}: strict-handoff: missing `same_flow_evidence`")
 
     default_gate_lines = [
         (line_no, line)
@@ -83,6 +98,12 @@ def strict_handoff_check(path: Path) -> list[str]:
             findings.append(
                 f"{path}:{line_no}: strict-handoff: default gate requires nearby default_gate_eligible: yes evidence"
             )
+    if final_report:
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if GENERIC_NEEDS_SOURCE_RE.search(line):
+                findings.append(
+                    f"{path}:{line_no}: strict-final-report: unresolved generic skeleton field: {line.strip()}"
+                )
     return findings
 
 
@@ -90,13 +111,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("files", nargs="+", type=Path, help="markdown/json/text files to check")
     parser.add_argument("--strict-handoff", action="store_true", help="also require handoff evidence/profile fields")
+    parser.add_argument(
+        "--strict-final-report",
+        action="store_true",
+        help="reject generic needs-source skeleton fields that must be resolved before a user-facing final report",
+    )
     args = parser.parse_args()
 
     findings: list[str] = []
     for path in args.files:
         findings.extend(check_file(path))
-        if args.strict_handoff:
-            findings.extend(strict_handoff_check(path))
+        if args.strict_handoff or args.strict_final_report:
+            findings.extend(strict_handoff_check(path, final_report=args.strict_final_report))
 
     if findings:
         print("handoff final check failed:")

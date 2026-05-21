@@ -15,6 +15,7 @@
 - `scripts/inspect_gcov_lines.py`: 精查 `.gcov`，提取 `#####`、未执行 branch/call、源码上下文，并报告被过滤掉的函数/事件数量。
 - `scripts/build_handoff_packet.py`: 根据 summary/line JSON 生成 hyptest-workflow 交接包骨架，包含 profile/gate 待确认字段。
 - `scripts/compare_gcov_snapshots.py`: 比较单 case 前后 `.gcov` 快照，报告函数上下文、计数增加、计数下降、counter 格式、before/after 缺失文件和缺失事件。
+- `scripts/run_case_coverage_matrix.py`: 按 `get_result.py` 类似方式选 ELF，一条条跑 coverage Spike，给每个 case 生成 before/after `.gcov`、compare 结果和最终矩阵报告。
 - `scripts/analyze_path_markers.py`: 解析 coverage Spike path-marker 日志，报告 marker 序列是否出现；带 pc+insn、seq 或 access_id 的 JSONL 是强相关证据，弱 JSON/text fallback 会降级。
 - `scripts/check_handoff_final.py`: 检查报告/交接包里是否残留裸 `TODO(agent)`，也可用 strict 模式检查 handoff 字段完整性。
 - `scripts/run_smoke_tests.sh`: 改 skill 后的脚本级回归 smoke。
@@ -125,7 +126,38 @@ after gcov 目录：<after_gcov_dir>。
 如果 branch/call 是百分比格式而不是 numeric count，请标 not-comparable-counter-format，不能正向确认路径。
 ```
 
-#### 7. 路径标记插桩设计或分析
+#### 7. 一键逐条跑 case 并生成覆盖率矩阵
+
+```text
+用 spike-coverage-testpoint 一条条跑 MemBlock non-H 的 coverage Spike 覆盖率。
+目标用 targets/memblock_non_h.json。
+coverage Spike 用 /nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov/spike。
+hyptest repo 用 /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1。
+先跑 case_elf_asm/spike 里前 20 个 ELF，每个 case 独立 reset gcda、生成 before/after gcov、compare，并输出最终 summary。
+跑完后请 agent 根据报告分析哪些 case 对目标路径有增量、哪些证据还不够，不要直接写 case。
+```
+
+跑完全部 ELF 后分析要补哪些测试场景：
+
+```text
+用 spike-coverage-testpoint 跑完 MemBlock non-H 全部 Spike ELF。
+目标用 targets/memblock_non_h.json。
+coverage Spike 用 /nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov/spike。
+hyptest repo 用 /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1。
+请顺序逐条跑 case_elf_asm/spike 下所有 mapped ELF，每个 case 独立 reset gcda、生成 before/after gcov、compare，输出 summary.md/summary.json。
+跑完后请根据 summary.json、top still-zero、entry/header movement、runner issues、scope warnings 和 Spike 源码，归纳还需要补哪些高价值测试场景/测试点。
+只做测试点规划和 hyptest-workflow handoff，不要直接写 case。
+```
+
+只跑选中的 case：
+
+```text
+用 spike-coverage-testpoint 逐条跑这些 case 的 coverage matrix：
+ai_xxx、ai_yyy、ai_zzz。
+目标用 targets/memblock_non_h.json，只收集证据和最终报告。
+```
+
+#### 8. 路径标记插桩设计或分析
 
 ```text
 用 spike-coverage-testpoint 给 coverage Spike 设计 MemBlock path marker 插桩。
@@ -137,7 +169,7 @@ after gcov 目录：<after_gcov_dir>。
 不要改普通 Spike 行为。
 ```
 
-#### 8. 要真正写 case
+#### 9. 要真正写 case
 
 先用本 skill 得到测试点计划。然后再说：
 
@@ -151,14 +183,18 @@ after gcov 目录：<after_gcov_dir>。
 一次好的分析应该至少包含：
 
 - 覆盖率输入：target、summary、gcov 目录。
-- 高优先级缺口：按维度排序，带 line/branch/call/0% entry 证据。
+- 高优先级缺口：按维度排序，带 line/branch/call/0% entry 证据，包含 low-line/low-branch/low-call entry。
+- target entry 完整性：`missing_entries_by_dimension` 用来区分“目标里写了但本次 gcov snapshot 没出现”和“出现了但 0%”。
 - 行级证据：具体 `.gcov` 文件、源码行、函数、miss kind。
-- 行级证据状态：`line_evidence_status`，特别注意 `weak-inspection-hint-only`、`no-line-evidence-from-requested-files`、`unreviewed-missing-files`。
+- 行级证据状态：`line_evidence_status`，特别注意 `exact-instruction-entry-evidence`、`weak-inspection-hint-only`、`no-line-evidence-from-requested-files`、`unreviewed-missing-files`。
 - 证据类型：`entry`、`shared-path` 或 `mixed`；`mixed` 需要继续看共享源码，避免把指令入口覆盖当成共享语义路径覆盖。
+- 同一执行流证据：`same_flow_evidence`。`aggregate-only` 只能说明套件里分别覆盖过边，不能说明一条指令/一次访问跑过完整路径。
+- 单 case 矩阵证据用途：`evidence_use`。`no-execution-evidence` 不能当覆盖率证据；`diagnostic-only-nonpass-counter-movement` 只能辅助定位；`pass-counter-evidence-needs-source-pc-review` 仍需源码/PC/must-pass 复核；`pass-counter-evidence-scope-review-required` 先做 target scope 判断。
 - 路径置信度：`confirmed-not-executed`、`counter-increment-observed`、`single-case-increment-confirmed`、`edge-covered-path-unknown`、`needs-path-instrumentation` 或 `out-of-scope`。
 - 路径签名：从 Spike 源码和 `.gcov` 证据反推的目标入口、共享函数路径、must-pass 证据点、源码证明的条件、observable、剩余不确定性。
 - 测试点候选：missing scenario、test idea、observable、gate note。
 - profile/gate 判断：`extension_required`、`current_profile_evidence`、`default_gate_eligible`、`profile_gate_note`。
+- 维度 gate 判断：`dimension_gate`，manual-only 或 `default_gate_allowed=false` 的维度只能作为 manual/special-run，除非先改 target/profile 决策。
 - 查重提示：应该在 hyptest 里搜哪些关键词。
 - handoff packet：后续交给 `hyptest-workflow` 写 case。
 
@@ -214,6 +250,12 @@ python3 scripts/build_handoff_packet.py \
 python3 scripts/check_handoff_final.py --strict-handoff /tmp/spike_cov_memblock_analysis/handoff.md
 ```
 
+如果是最终要贴给用户的完成版报告，再加严格检查，避免保留通用 skeleton 字段：
+
+```bash
+python3 scripts/check_handoff_final.py --strict-final-report /tmp/spike_cov_memblock_analysis/final_report.md
+```
+
 比较单 case 前后 `.gcov` 快照：
 
 ```bash
@@ -224,6 +266,119 @@ python3 scripts/compare_gcov_snapshots.py \
   --file mmu.cc.gcov \
   --file mmu.h.gcov \
   --file v_ext_macros.h.gcov \
+  --require-event mmu.cc.gcov:branch:1234:0 \
+  --markdown
+```
+
+一键逐条跑 ELF 并生成最终 coverage matrix：
+
+```bash
+HYPTEST_SPIKE_BIN=/nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov/spike \
+python3 scripts/run_case_coverage_matrix.py \
+  --hyptest-repo /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1 \
+  --target targets/memblock_non_h.json \
+  --build-dir /nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov \
+  --elf-dir /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1/case_elf_asm/spike \
+  --all-elves \
+  --limit 20 \
+  --gcno-from-target \
+  --out-dir /tmp/spike_cov_case_matrix_memblock_20
+```
+
+全量跑完所有 mapped ELF：
+
+```bash
+HYPTEST_SPIKE_BIN=/nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov/spike \
+python3 scripts/run_case_coverage_matrix.py \
+  --hyptest-repo /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1 \
+  --target targets/memblock_non_h.json \
+  --build-dir /nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov \
+  --elf-dir /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1/case_elf_asm/spike \
+  --all-elves \
+  --gcno-from-target \
+  --out-dir /tmp/spike_cov_case_matrix_memblock_all
+```
+
+只跑名字像 MemBlock/访存相关的 ELF，适合先收一版更聚焦的证据：
+
+```bash
+HYPTEST_SPIKE_BIN=/nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov/spike \
+python3 scripts/run_case_coverage_matrix.py \
+  --hyptest-repo /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1 \
+  --target targets/memblock_non_h.json \
+  --build-dir /nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov \
+  --elf-dir /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1/case_elf_asm/spike \
+  --all-elves \
+  --case-regex 'memblock|pbmt|pte|pmp|pma|amo|lr|sc|load|store|vector|trigger|fault|unaligned|misalign' \
+  --gcno-from-target \
+  --out-dir /tmp/spike_cov_case_matrix_memblock_filtered
+```
+
+只跑指定 case：
+
+```bash
+HYPTEST_SPIKE_BIN=/nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov/spike \
+python3 scripts/run_case_coverage_matrix.py \
+  --hyptest-repo /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1 \
+  --target targets/memblock_non_h.json \
+  --build-dir /nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov \
+  --case ai_case_a \
+  --case ai_case_b \
+  --gcno-from-target \
+  --out-dir /tmp/spike_cov_case_matrix_selected
+```
+
+常用选项：
+
+- `--limit N`: 从已选 case 里只跑前 N 个，适合先试跑。
+- `--case-regex REGEX`: 从已选 case 里再按名字过滤，例如 `--case-regex '^(addr_unaligned|ai_micro_memblock)'`，避免 `--all-elves --limit 3` 先跑到非目标 case。
+- `--case-list file`: 从文件读 case 名或 ELF 路径。
+- `--dimension vector`: 只用 target 里名称包含 `vector` 的 inspection hints 解析 `.gcno`。
+- `--requirements-json req.json` / `--requirements-dir dir`: 给 compare 加 must-pass line/branch/call 证据点。
+- `--reset-scope selected|all|none`: 每个 case 前删除哪些 `.gcda` counter；默认 `selected`。
+- `--dry-run`: 只看会选哪些 case 和 `.gcno`，不运行。
+- `--command-template`: 支持 `{spike_bin}`、`{elf}`、`{case_name}`、`{run_name}`、`{case_dir}` 等占位符；需要 Spike commit/log 证据时可把 `--log={case_dir}/spike.log` 写进去。默认模板直接执行 `{spike_bin}`，不经过 `bash -lc`，避免 login shell 覆盖临时 `HYPTEST_SPIKE_BIN`。
+
+输出文件：
+
+- `summary.md`: 最终人工可读报告。
+- `summary.json`: 机器可读矩阵。
+- `cases/<idx>_<case>/run.log`: 单 case Spike 输出。
+- `cases/<idx>_<case>/before_gcov` / `after_gcov`: 单 case 前后 `.gcov` 快照。
+- `cases/<idx>_<case>/compare.md` / `compare.json`: 单 case 增量覆盖证据。
+
+全量跑完后，下一步让 agent 分析补点时直接给这类 prompt：
+
+```text
+用 spike-coverage-testpoint 分析 /tmp/spike_cov_case_matrix_memblock_all/summary.json 和 summary.md。
+目标仍然是 targets/memblock_non_h.json。
+请只把 PASS 且 in-scope 的 counter movement 当正向覆盖线索；
+MISSING_ELF、RUNNER_ERROR、MARKER_MISMATCH、TIMEOUT 只能作为诊断线索；
+`pass-counter-evidence-scope-review-required` 先按 target scope 判断，不要直接算 MemBlock non-H 正向证据。
+请结合 Spike 源码和 .gcov still-zero/entry/header movement，输出还缺哪些高质量测试场景、测试点、observable、gate note 和 hyptest-workflow handoff。
+不要直接写 case。
+```
+
+`summary.md` 会额外折叠两类快速定位信息：
+
+- Runner issues：FAILED/MARKER_MISMATCH/TIMEOUT 的 marker、断言位置和错误摘要。
+- Missing ELF diagnostics：显式 `--case` 找不到 ELF 时，会在 run.log/summary 里列出 missing path 和相似 case 建议，方便修正 case 名或 artifact 映射。
+- Evidence use：每个 case 会标 `evidence_use`。缺 ELF 不生成 before/after compare；非 PASS 但计数移动只算 diagnostic-only；PASS 但命中 target `scope_out` 会标成 scope-review-required。
+- Target scope warnings：case 虽然 PASS，但 run.log 命中 target `scope_out` 关键词时会提醒，例如 MemBlock non-H target 下日志出现 HS/VS/VU、stage2、guest page fault、H 扩展指令名等。
+- Per-case coverage highlights：每个 case 主要新增覆盖/仍为 0 的 top Spike `.gcov` 文件，优先按 target 的 inspection/source-priority 排序，默认展示前 8 个，`l/b/c` 分别表示 line/branch/call event 数量。它还会单独列出 entry/header movement 和仍为 0 的 entry/header；若 case 名里包含对应指令入口，比如 `amoand_d`，该入口会优先展示，避免被共享文件淹没。
+
+注意：这个脚本默认顺序执行，不做并行。`.gcda` counter 是共享状态，并行跑会污染单 case 增量证据。
+
+同一条访问/指令的 marker 如果分多条 JSON 记录输出，用相关字段聚合：
+
+```bash
+python3 scripts/analyze_path_markers.py \
+  --log /tmp/path_markers.jsonl \
+  --require mem.access.scalar_load \
+  --require mem.translate.tlb_miss_walk \
+  --require mem.fault.page \
+  --ordered \
+  --group-by access_id \
   --markdown
 ```
 
@@ -269,5 +424,6 @@ bash scripts/run_smoke_tests.sh
 - 没有 pc+insn、seq 或 access_id 的 JSON marker 记录会降级为 `json-marker-sequence-observed-weak`。
 - 默认 gate 测试点必须先做 profile/gate 判断；0% entry 可能只是 ISA/profile 没打开，不一定值得写默认用例。
 - target 可用 `special_run_scope`、`manual_only_dimensions`、`dimension_metadata` 标记 manual/special-run 维度。
+- `XSError/cache error/NMI` 这类需要特殊注入的 MemBlock 路径已放在 `memblock_non_h.json` 的 `micro cache error/NMI paths`，默认按 manual/special-run 处理。
 - 不要从 target 里的字段枚举“理论组合”来生成测试点；必须从 Spike 源码、`.gcov`、单 case 增量或 marker 记录反推真实路径。
 - 生成 case、修改 `test_point`、注册 `test_register.c` 时，应切到 `hyptest-workflow` skill。

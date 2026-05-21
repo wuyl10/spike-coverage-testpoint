@@ -25,6 +25,8 @@ class MissEvent:
     source_line: int | None
     text: str
     source_code: str | None = None
+    ordinal: int | None = None
+    counter_format: str | None = None
 
 
 @dataclass
@@ -59,13 +61,11 @@ FUNCTION_RE = re.compile(
     r"function\s+(?P<name>\S+)\s+called\s+(?P<called>\d+)\s+returned\s+(?P<returned>\S+)\s+blocks executed\s+(?P<blocks>\S+)"
 )
 GCOV_SOURCE_LINE_RE = re.compile(r"^\s*(?P<count>[-#=\d\*]+):\s*(?P<line>\d+):(?P<code>.*)$")
-BRANCH_NEVER_RE = re.compile(r"^\s*branch\s+\d+\s+never executed")
-CALL_NEVER_RE = re.compile(r"^\s*call\s+\d+\s+never executed")
-BRANCH_TAKEN_ZERO_RE = re.compile(r"^\s*branch\s+\d+\s+taken\s+0\b")
-CALL_RETURNED_ZERO_RE = re.compile(r"^\s*call\s+\d+\s+returned\s+0\b")
+BRANCH_RE = re.compile(r"^\s*branch\s+(?P<num>\d+)\s+(?P<rest>.*)$")
+CALL_RE = re.compile(r"^\s*call\s+(?P<num>\d+)\s+(?P<rest>.*)$")
 
 
-def parse_gcov(path: Path) -> FileReport:
+def parse_gcov(path: Path, include_file_scope: bool = False) -> FileReport:
     source: str | None = None
     functions: list[FunctionBlock] = []
     current = FunctionBlock(
@@ -121,14 +121,26 @@ def parse_gcov(path: Path) -> FileReport:
             continue
 
         kind: str | None = None
-        if BRANCH_NEVER_RE.match(line):
-            kind = "branch-never"
-        elif CALL_NEVER_RE.match(line):
-            kind = "call-never"
-        elif BRANCH_TAKEN_ZERO_RE.match(line):
-            kind = "branch-taken-0"
-        elif CALL_RETURNED_ZERO_RE.match(line):
-            kind = "call-returned-0"
+        ordinal: int | None = None
+        counter_format: str | None = None
+        branch_match = BRANCH_RE.match(line)
+        call_match = CALL_RE.match(line)
+        if branch_match:
+            ordinal = int(branch_match.group("num"))
+            rest = branch_match.group("rest")
+            counter_format = branch_or_call_counter_format(rest)
+            if "never executed" in rest:
+                kind = "branch-never"
+            elif re.search(r"\btaken\s+0(?=$|\s)", rest):
+                kind = "branch-taken-0"
+        elif call_match:
+            ordinal = int(call_match.group("num"))
+            rest = call_match.group("rest")
+            counter_format = branch_or_call_counter_format(rest)
+            if "never executed" in rest:
+                kind = "call-never"
+            elif re.search(r"\breturned\s+0(?=$|\s)", rest):
+                kind = "call-returned-0"
 
         if kind:
             current.events.append(
@@ -138,10 +150,16 @@ def parse_gcov(path: Path) -> FileReport:
                     source_line=last_source_line,
                     text=line.strip(),
                     source_code=last_source_code,
+                    ordinal=ordinal,
+                    counter_format=counter_format,
                 )
             )
 
-    functions = [fn for fn in functions if fn.events or (fn.called == 0)]
+    functions = [
+        fn
+        for fn in functions
+        if (include_file_scope or fn.name != "<file-scope>") and (fn.events or (fn.called == 0))
+    ]
     return FileReport(
         gcov_file=str(path),
         source=source,
@@ -176,15 +194,39 @@ def function_priority(fn: FunctionBlock, patterns: list[re.Pattern[str]]) -> int
 
 
 def event_key(event: MissEvent) -> tuple[str, int | None, str, str]:
-    return (event.kind, event.source_line, event.text, event.source_code or "")
+    return (
+        event.kind,
+        event.source_line,
+        str(event.ordinal) if event.ordinal is not None else "",
+        event.text,
+        event.source_code or "",
+    )
 
 
-def merge_duplicate_functions(functions: list[FunctionBlock]) -> list[FunctionBlock]:
+def branch_or_call_counter_format(rest: str) -> str:
+    if "never executed" in rest:
+        return "never"
+    if re.search(r"\b(?:taken|returned)\s+\d+(?:\.\d+)?%", rest):
+        return "percent"
+    if re.search(r"\b(?:taken|returned)\s+\d+(?=$|\s)", rest):
+        return "count"
+    return "unknown"
+
+
+def function_merge_key(fn: FunctionBlock) -> str:
+    line = first_source_line(fn.events)
+    return "|".join([fn.name, fn.mangled_name or "", str(line if line is not None else fn.gcov_line)])
+
+
+def merge_duplicate_functions(functions: list[FunctionBlock], mode: str) -> list[FunctionBlock]:
+    if mode == "none":
+        return functions
     merged: dict[str, FunctionBlock] = {}
     order: list[str] = []
 
     for fn in functions:
-        key = fn.name
+        key = fn.name if mode == "name" else function_merge_key(fn)
+        created = False
         if key not in merged:
             merged[key] = FunctionBlock(
                 name=fn.name,
@@ -196,6 +238,7 @@ def merge_duplicate_functions(functions: list[FunctionBlock]) -> list[FunctionBl
                 events=[],
             )
             order.append(key)
+            created = True
         dst = merged[key]
         if (dst.called is None or dst.called == 0) and fn.called and fn.called > 0:
             dst.returned_pct = fn.returned_pct
@@ -207,9 +250,9 @@ def merge_duplicate_functions(functions: list[FunctionBlock]) -> list[FunctionBl
             or first_source_line(fn.events) < first_source_line(dst.events)  # type: ignore[operator]
         ):
             dst.gcov_line = fn.gcov_line
-        if dst.called is not None and fn.called is not None:
+        if not created and dst.called is not None and fn.called is not None:
             dst.called += fn.called
-        elif dst.called is None:
+        elif not created and dst.called is None:
             dst.called = fn.called
         seen = {event_key(event) for event in dst.events}
         for event in fn.events:
@@ -221,7 +264,7 @@ def merge_duplicate_functions(functions: list[FunctionBlock]) -> list[FunctionBl
     return [merged[key] for key in order]
 
 
-def apply_exclude_regex(report: FileReport, patterns: list[re.Pattern[str]]) -> FileReport:
+def apply_exclude_regex(report: FileReport, patterns: list[re.Pattern[str]], merge_mode: str) -> FileReport:
     excluded_counts = ExcludedCounts()
 
     def rebuild(functions: list[FunctionBlock]) -> FileReport:
@@ -236,7 +279,7 @@ def apply_exclude_regex(report: FileReport, patterns: list[re.Pattern[str]]) -> 
         )
 
     if not patterns:
-        return rebuild(merge_duplicate_functions(report.functions))
+        return rebuild(merge_duplicate_functions(report.functions, merge_mode))
 
     functions = []
     for fn in report.functions:
@@ -263,7 +306,7 @@ def apply_exclude_regex(report: FileReport, patterns: list[re.Pattern[str]]) -> 
                     events=filtered_events,
                 )
             )
-    return rebuild(merge_duplicate_functions(functions))
+    return rebuild(merge_duplicate_functions(functions, merge_mode))
 
 
 def load_target_line_rules(path: Path | None) -> tuple[list[str], list[str]]:
@@ -340,7 +383,7 @@ def first_source_line(events: Iterable[MissEvent]) -> int | None:
     return None
 
 
-def grouped_event_rows(events: list[MissEvent], max_rows: int) -> tuple[list[tuple[str, int | None, str]], int]:
+def grouped_event_rows(events: list[MissEvent], max_rows: int) -> tuple[list[tuple[str, int | None, str, str]], int]:
     grouped: dict[tuple[int | None, int], dict] = {}
     order: list[tuple[int | None, int]] = []
 
@@ -351,6 +394,10 @@ def grouped_event_rows(events: list[MissEvent], max_rows: int) -> tuple[list[tup
             order.append(key)
         item = grouped[key]
         item["counts"][event.kind] = item["counts"].get(event.kind, 0) + 1
+        if event.ordinal is not None:
+            item.setdefault("ordinals", set()).add(f"{event.kind}:{event.ordinal}")
+        if event.counter_format:
+            item.setdefault("counter_formats", set()).add(event.counter_format)
         if event.kind == "uncovered-line" and event.text:
             item["code"] = event.text
         elif event.source_code and not item["code"]:
@@ -358,12 +405,15 @@ def grouped_event_rows(events: list[MissEvent], max_rows: int) -> tuple[list[tup
         elif len(item["samples"]) < 3:
             item["samples"].append(event.text)
 
-    rows: list[tuple[str, int | None, str]] = []
+    rows: list[tuple[str, int | None, str, str]] = []
     for key in order[:max_rows]:
         item = grouped[key]
         kinds = ", ".join(f"{name}={count}" for name, count in sorted(item["counts"].items()))
+        ordinals = ", ".join(sorted(item.get("ordinals", set()))) or "-"
+        formats = ", ".join(sorted(item.get("counter_formats", set()))) or "-"
         evidence = item["code"] or "; ".join(item["samples"])
-        rows.append((kinds, key[0], evidence))
+        detail = f"ordinals={ordinals}; formats={formats}"
+        rows.append((kinds, key[0], detail, evidence))
     return rows, max(0, len(order) - max_rows)
 
 
@@ -418,14 +468,14 @@ def print_markdown(
             print("- miss kinds: " + ", ".join(f"{key}={value}" for key, value in sorted(counts.items())))
             print()
 
-            print("| Miss kinds | Source line | Evidence |")
-            print("|---|---:|---|")
+            print("| Miss kinds | Source line | Branch/call detail | Evidence |")
+            print("|---|---:|---|---|")
             rows, remaining = grouped_event_rows(fn.events, max_events)
-            for kinds, source_line, evidence in rows:
+            for kinds, source_line, detail, evidence in rows:
                 text = evidence.replace("|", "\\|")
-                print(f"| `{kinds}` | {source_line if source_line is not None else '-'} | `{text}` |")
+                print(f"| `{kinds}` | {source_line if source_line is not None else '-'} | `{detail}` | `{text}` |")
             if remaining:
-                print(f"| ... | - | +{remaining} more source locations |")
+                print(f"| ... | - | - | +{remaining} more source locations |")
             print()
 
             if line is not None:
@@ -486,6 +536,17 @@ def main() -> int:
     parser.add_argument("--context", type=int, default=5, help="source context lines around first miss")
     parser.add_argument("--max-functions", type=int, default=12, help="max functions to print per file")
     parser.add_argument("--max-events", type=int, default=12, help="max miss events to print per function")
+    parser.add_argument(
+        "--merge-functions",
+        choices=("none", "identity", "name"),
+        default="identity",
+        help="merge duplicate function blocks: none, identity=(demangled+mangled+line), or name=(old broad demangled-name merge)",
+    )
+    parser.add_argument(
+        "--include-file-scope",
+        action="store_true",
+        help="include file-scope gcov events that are not attached to a function header",
+    )
     parser.add_argument("--json-out", type=Path, help="write JSON report to this path")
     parser.add_argument("--markdown", action="store_true", help="print markdown report")
     args = parser.parse_args()
@@ -496,7 +557,10 @@ def main() -> int:
     priority_regex = target_priority_regex + args.priority_regex
     exclude_patterns = [re.compile(pattern, re.IGNORECASE) for pattern in exclude_regex]
     priority_patterns = [re.compile(pattern, re.IGNORECASE) for pattern in priority_regex]
-    reports = [apply_exclude_regex(parse_gcov(path), exclude_patterns) for path in paths]
+    reports = [
+        apply_exclude_regex(parse_gcov(path, include_file_scope=args.include_file_scope), exclude_patterns, args.merge_functions)
+        for path in paths
+    ]
 
     if args.json_out:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)

@@ -87,6 +87,11 @@
     "VI_(LD|ST|LDST|LD_WHOLE|ST_WHOLE|LD_INDEX|ST_INDEX)",
     "vstart|mask|fault-only-first|whole|indexed|strided|reservation|compare_and_swap"
   ],
+  "coverage_thresholds": {
+    "low_line_pct": 20.0,
+    "low_branch_pct": 10.0,
+    "low_call_pct": 10.0
+  },
   "source_priority": [
     "riscv/mmu.cc",
     "riscv/mmu.h",
@@ -129,6 +134,13 @@
       "riscv/csrs.cc",
       "riscv/trap.h"
     ],
+    "exception priority": [
+      "riscv/mmu.cc",
+      "riscv/mmu.h",
+      "riscv/trap.h",
+      "riscv/processor.cc",
+      "riscv/csrs.cc"
+    ],
     "trigger/debug memory paths": [
       "riscv/mmu.cc",
       "riscv/triggers.cc",
@@ -144,6 +156,12 @@
       "riscv/mmu.cc",
       "riscv/memtracer.h",
       "riscv/execute.cc"
+    ],
+    "micro cache error/NMI paths": [
+      "riscv/mmu.cc",
+      "riscv/processor.cc",
+      "riscv/trap.h",
+      "riscv/csrs.cc"
     ],
     "vector shared paths": [
       "riscv/v_ext_macros.h",
@@ -267,13 +285,57 @@
       "insn:vsm_v"
     ],
     "LR/SC": [
+      "riscv/mmu.cc",
+      "riscv/mmu.h",
       "insn:lr_w",
       "insn:lr_d",
       "insn:sc_w",
       "insn:sc_d"
     ],
     "AMO/AMOCAS": [
-      "glob:riscv/insns/amo*.h"
+      "riscv/mmu.cc",
+      "riscv/mmu.h",
+      "insn:amoadd_b",
+      "insn:amoadd_h",
+      "insn:amoadd_w",
+      "insn:amoadd_d",
+      "insn:amoand_b",
+      "insn:amoand_h",
+      "insn:amoand_w",
+      "insn:amoand_d",
+      "insn:amomax_b",
+      "insn:amomax_h",
+      "insn:amomax_w",
+      "insn:amomax_d",
+      "insn:amomaxu_b",
+      "insn:amomaxu_h",
+      "insn:amomaxu_w",
+      "insn:amomaxu_d",
+      "insn:amomin_b",
+      "insn:amomin_h",
+      "insn:amomin_w",
+      "insn:amomin_d",
+      "insn:amominu_b",
+      "insn:amominu_h",
+      "insn:amominu_w",
+      "insn:amominu_d",
+      "insn:amoor_b",
+      "insn:amoor_h",
+      "insn:amoor_w",
+      "insn:amoor_d",
+      "insn:amoswap_b",
+      "insn:amoswap_h",
+      "insn:amoswap_w",
+      "insn:amoswap_d",
+      "insn:amoxor_b",
+      "insn:amoxor_h",
+      "insn:amoxor_w",
+      "insn:amoxor_d",
+      "insn:amocas_b",
+      "insn:amocas_h",
+      "insn:amocas_w",
+      "insn:amocas_d",
+      "insn:amocas_q"
     ],
     "CBO/CMO": [
       "insn:cbo_clean",
@@ -312,6 +374,13 @@
       "csrs.cc.gcov",
       "trap.h.gcov"
     ],
+    "exception priority": [
+      "mmu.cc.gcov",
+      "mmu.h.gcov",
+      "trap.h.gcov",
+      "processor.cc.gcov",
+      "csrs.cc.gcov"
+    ],
     "trigger/debug memory paths": [
       "mmu.cc.gcov",
       "triggers.cc.gcov",
@@ -325,6 +394,12 @@
       "mmu.cc.gcov",
       "memtracer.h.gcov",
       "execute.cc.gcov"
+    ],
+    "micro cache error/NMI paths": [
+      "mmu.cc.gcov",
+      "processor.cc.gcov",
+      "trap.h.gcov",
+      "csrs.cc.gcov"
     ],
     "vector shared paths": [
       "v_ext_macros.h.gcov",
@@ -394,14 +469,54 @@
       "mmu.cc.gcov",
       "mmu.h.gcov",
       "lr_w.h.gcov",
-      "sc_w.h.gcov"
+      "lr_d.h.gcov",
+      "sc_w.h.gcov",
+      "sc_d.h.gcov"
     ],
     "AMO/AMOCAS": [
       "mmu.cc.gcov",
       "mmu.h.gcov",
+      "amoadd_b.h.gcov",
+      "amoadd_h.h.gcov",
       "amoadd_w.h.gcov",
+      "amoadd_d.h.gcov",
+      "amoand_b.h.gcov",
+      "amoand_h.h.gcov",
+      "amoand_w.h.gcov",
+      "amoand_d.h.gcov",
+      "amomax_b.h.gcov",
+      "amomax_h.h.gcov",
+      "amomax_w.h.gcov",
+      "amomax_d.h.gcov",
+      "amomaxu_b.h.gcov",
+      "amomaxu_h.h.gcov",
+      "amomaxu_w.h.gcov",
+      "amomaxu_d.h.gcov",
+      "amomin_b.h.gcov",
+      "amomin_h.h.gcov",
+      "amomin_w.h.gcov",
+      "amomin_d.h.gcov",
+      "amominu_b.h.gcov",
+      "amominu_h.h.gcov",
+      "amominu_w.h.gcov",
+      "amominu_d.h.gcov",
+      "amoor_b.h.gcov",
+      "amoor_h.h.gcov",
+      "amoor_w.h.gcov",
+      "amoor_d.h.gcov",
+      "amoswap_b.h.gcov",
+      "amoswap_h.h.gcov",
+      "amoswap_w.h.gcov",
+      "amoswap_d.h.gcov",
+      "amoxor_b.h.gcov",
+      "amoxor_h.h.gcov",
+      "amoxor_w.h.gcov",
+      "amoxor_d.h.gcov",
+      "amocas_b.h.gcov",
+      "amocas_h.h.gcov",
       "amocas_w.h.gcov",
-      "amocas_d.h.gcov"
+      "amocas_d.h.gcov",
+      "amocas_q.h.gcov"
     ],
     "CBO/CMO": [
       "mmu.cc.gcov",
@@ -585,14 +700,6 @@
       "translate",
       "trap conversion"
     ],
-    "alignment/boundary": [
-      "misaligned",
-      "unaligned",
-      "cross page",
-      "boundary",
-      "address misaligned",
-      "partial fault"
-    ],
     "alignment/boundary shared paths": [
       "misaligned",
       "unaligned",
@@ -643,6 +750,15 @@
       "commit log",
       "log_mem",
       "memory log"
+    ],
+    "micro cache error/NMI paths": [
+      "XSError",
+      "NMI",
+      "cache error",
+      "micro cache error",
+      "machine check",
+      "error injection",
+      "non-maskable interrupt"
     ],
     "scalar load/store": [
       "lb",
@@ -762,16 +878,12 @@
       "amominu",
       "amocas",
       "compare and swap",
-      "aq",
-      "rl"
-    ],
-    "AMOCAS": [
-      "amocas",
-      "compare and swap",
       "CAS",
       "equal",
       "not equal",
-      "Zacas"
+      "Zacas",
+      "aq",
+      "rl"
     ],
     "LR/SC": [
       "lr.w",
@@ -799,39 +911,6 @@
       "instruction cache",
       "memory ordering"
     ],
-    "trigger timing-after": [
-      "trigger",
-      "timing after",
-      "mcontrol",
-      "load trigger",
-      "store trigger",
-      "debug action"
-    ],
-    "PMP partial": [
-      "PMP",
-      "TOR",
-      "NAPOT",
-      "partial",
-      "homogeneous",
-      "access fault"
-    ],
-    "PMA/PBMT/MMIO": [
-      "PMA",
-      "PBMT",
-      "MMIO",
-      "IO",
-      "non-idempotent",
-      "access fault",
-      "device"
-    ],
-    "TLB/PTE cache": [
-      "sfence.vma",
-      "satp",
-      "PTE",
-      "A/D",
-      "stale",
-      "TLB"
-    ],
     "exception priority": [
       "exception priority",
       "load page fault",
@@ -840,13 +919,27 @@
       "address misaligned",
       "mtval",
       "stval"
+    ]
+  },
+  "duplicate_search_aliases": {
+    "alignment/boundary shared paths": [
+      "alignment/boundary"
     ],
-    "memtracer/log": [
-      "memtracer",
-      "trace",
-      "commit log",
-      "log_mem",
-      "special run"
+    "stage1 translation and TLB": [
+      "TLB/PTE cache"
+    ],
+    "PMP/PMA/PBMT shared paths": [
+      "PMP partial",
+      "PMA/PBMT/MMIO"
+    ],
+    "trigger/debug memory paths": [
+      "trigger timing-after"
+    ],
+    "memtracer/log paths": [
+      "memtracer/log"
+    ],
+    "AMO/AMOCAS": [
+      "AMOCAS"
     ]
   },
   "handoff_defaults": {
@@ -857,10 +950,12 @@
   },
   "special_run_scope": [
     "memtracer/log paths",
-    "MMIO/device paths when deterministic device setup is not part of the default hyptest platform"
+    "MMIO/device paths",
+    "micro cache error/NMI paths"
   ],
   "manual_only_dimensions": [
-    "memtracer/log paths"
+    "memtracer/log paths",
+    "micro cache error/NMI paths"
   ],
   "dimension_metadata": {
     "memtracer/log paths": {
@@ -872,6 +967,11 @@
       "default_gate_allowed": false,
       "requires_runtime_option": true,
       "gate_note": "manual/special-run unless a deterministic device/MMIO setup is available in default hyptest"
+    },
+    "micro cache error/NMI paths": {
+      "default_gate_allowed": false,
+      "requires_runtime_option": true,
+      "gate_note": "manual/special-run unless cache-error/NMI injection is available and deterministic in the selected platform"
     }
   }
 }

@@ -27,8 +27,10 @@ target 文件负责：
 - `scope_out`: 本次明确不分析的范围。
 - `summary_include_regex` / `summary_exclude_prefixes` / `summary_exclude_regex`: summary 级别证据过滤。
 - `line_exclude_regex`: `.gcov` 行级证据过滤。
+- `coverage_thresholds`: 可选。summary 低覆盖阈值，默认 line<20%、branch<10%、call<10%；不同目标需要不同阈值时只改 target。
 - `dimensions`: 脚本分组用的覆盖维度。
 - `path_analysis`: 可选。路径敏感分析用的证据策略、报告字段 checklist、置信度、单 case 增量规则、path marker 词表。它不是完整路径矩阵，不允许 agent 从这里脑补组合。
+- `special_run_scope` / `manual_only_dimensions` / `dimension_metadata`: target 级 gate 约束。脚本会把它们带到 candidate/handoff；agent 不得把 manual-only 维度推荐成 default gate。
 - `analysis_notes` / `duplicate_search_terms`: agent 做场景解释和查重时使用的目标专用信息。
 
 如果用户说“我要分析 X，不包含 Y”，先检查是否已有合适 target；没有就复制模板新建 target。后续脚本、报告、交接包都引用这个 target。
@@ -109,6 +111,7 @@ Do not let script output become the final answer by itself. Script output is evi
 - Do not edit `~/.bashrc`. If rerunning hyptest with a coverage Spike, use temporary environment variables in the command/process only.
 - When a proposed point requires special Spike runtime options, label it `manual/special-run` instead of pretending it is a normal default gate.
 - If the target has `special_run_scope`, `manual_only_dimensions`, or `dimension_metadata`, apply those before suggesting a default gate.
+- Treat `dimension_gate.manual_only` or `default_gate_allowed: false` from script output as a hard downgrade to `manual/special-run` unless the user explicitly changes the target/profile decision.
 - Separate **entry coverage** from **semantic coverage**:
   - `insns/*.h` line coverage only proves the instruction entry executed.
   - Shared-path branch/call coverage proves whether the interesting MMU/vector/atomic/trigger/fault logic executed.
@@ -164,7 +167,7 @@ If the user provides different paths, use those.
 4. **Rank coverage evidence**
    - First pass: use `scripts/analyze_spike_gcov.py --target <target.json> --top <N> --markdown`.
    - Treat the score as a triage hint only. It is based on 0% entries and low line/branch/call coverage; it is not a semantic test quality score.
-   - Read `evidence_class`, `evidence_class_reason`, and `classification_confidence`. Prefer `shared-path` when the user's goal is semantic/path coverage. Treat `mixed` as "entry evidence that needs shared source review"; treat `entry` as profile-gated entry evidence until source review shows value.
+   - Read `evidence_class`, `evidence_class_reason`, `classification_confidence`, `entry_selection_reason`, and `dimension_gate`. Prefer `shared-path` when the user's goal is semantic/path coverage. Treat `mixed` as "entry evidence that needs shared source review"; treat `entry` as profile-gated entry evidence until source review shows value.
    - Do not turn this ranking directly into test points without source/gcov inspection and agent reasoning.
    - If a high-ranked gap is only an instruction entry, inspect shared paths or mark it as `entry-only evidence`.
 
@@ -188,8 +191,9 @@ If the user provides different paths, use those.
      - remaining uncertainty
    - If any must-pass event is zero in the suite `.gcov`, mark `confirmed-not-executed`.
    - If all events have aggregate coverage but no same-flow proof, mark `edge-covered-path-unknown`.
-  - To confirm a specific tiny case, take before/after `.gcov` snapshots with numeric branch/call counts, then run `compare_gcov_snapshots.py`; use Spike `-l --log-commits --log=<file>` when useful. Use default `--key-mode stable-line` unless you intentionally want function-aware matching. If the compare output has `decreased-or-reset`, `not-comparable-counter-format`, missing files, possible key drift, or missing required events, do not use it for positive path confirmation.
-   - If the path depends on internal correlation that gcov cannot tie together, propose target-defined path markers and mark `needs-path-instrumentation`.
+   - To confirm a specific tiny case, take before/after `.gcov` snapshots with numeric branch/call counts, then run `compare_gcov_snapshots.py` with `--requirements-json` or repeated `--require-event file:kind:line[:ordinal]` for the must-pass line/branch/call points. Use Spike `-l --log-commits --log=<file>` when useful. Use default `--key-mode stable-line` unless you intentionally want function-aware matching. If `all_required_passed` is false, or the compare output has `decreased-or-reset`, `not-comparable-counter-format`, missing files, possible key drift, or missing required events, do not use it for positive path confirmation.
+   - If the user wants to run many cases one by one, use `run_case_coverage_matrix.py`. Keep it sequential unless the task is explicitly logs-only; gcov `.gcda` counters are shared and parallel execution corrupts per-case deltas. Use `--limit` for “选中多少 case 跑”, `--case/--case-list/--elf` for selected cases, and `--all-elves` for a full ELF directory pass.
+   - If the path depends on internal correlation that gcov cannot tie together, propose target-defined path markers and mark `needs-path-instrumentation`. If markers are emitted as one marker per JSON record, use `analyze_path_markers.py --group-by access_id` or `--group-by seq` to prove an ordered sequence for one dynamic access/instruction.
 
 7. **Check existing hyptest coverage**
    - Search existing `test_point/**/*.md`, `ai_test_cases/**/*.c`, `manual_test_cases/**/*.c`, and `test_register.c`.
@@ -201,6 +205,8 @@ If the user provides different paths, use those.
    - Give evidence first: target, file/coverage/line/branch/call and exact gap.
    - Include path confidence and explain whether the evidence is an entry, edge, single-case increment, or marker-sequence proof.
    - Include `line_evidence_status` and do not finalize candidates marked `weak-inspection-hint-only`, `no-line-evidence-from-requested-files`, or `unreviewed-missing-files` without more source/gcov review.
+   - Include `same_flow_evidence`. If it says `aggregate-only`, do not claim a same instruction/access flow was covered; require single-case increment or correlated path markers.
+   - Treat `same_flow_evidence.status: suite-summary-gap` as a prompt to inspect source and fill must-pass evidence; do not call it path proof by itself.
    - Include profile/gate fields before recommending default-gate cases: `extension_required`, `current_profile_evidence`, `default_gate_eligible`, and `profile_gate_note`.
    - Then give proposed test point: setup, action, expected observation, and likely hyptest location.
    - Mark `default`, `manual/special-run`, `blocked`, `out-of-scope`, or `needs profile decision` when obvious.
@@ -306,6 +312,45 @@ Interpretation:
 When the user asks how to run or interpret a single-case increment check, read
 `references/single_case_increment.md`.
 
+Use `run_case_coverage_matrix.py` when the user wants one-click all-case or selected-case sequential runs with a final report:
+
+```bash
+HYPTEST_SPIKE_BIN=/path/to/build-cov/spike \
+python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/run_case_coverage_matrix.py \
+  --hyptest-repo /path/to/riscv-hyp-tests-nhv5.1 \
+  --target /path/to/targets/memblock_non_h.json \
+  --build-dir /path/to/offical-spike-coverage/build-cov \
+  --elf-dir /path/to/riscv-hyp-tests-nhv5.1/case_elf_asm/spike \
+  --all-elves \
+  --limit 20 \
+  --gcno-from-target \
+  --out-dir /tmp/spike_cov_case_matrix
+```
+
+Useful selectors:
+
+```text
+--case ai_name        Select one case; repeatable
+--case-list file      Read case names or ELF paths
+--elf file.ELF        Run an explicit ELF
+--all-elves           Run mapped ELFs under --elf-dir
+--case-regex REGEX    Filter selected case names before --limit
+--limit N             Only run the first N selected cases
+--dimension vector    Restrict --gcno-from-target to matching target dimensions
+--dry-run             Show selected cases/gcno files without running Spike
+```
+
+`--command-template` supports `{spike_bin}`, `{elf}`, `{elf_name}`, `{elf_dir}`, `{case_name}`, `{run_name}`, and `{case_dir}`. The default template directly executes `{spike_bin}` instead of `bash -lc`, so shell startup files cannot override the temporary coverage Spike setting. For path-sensitive confirmation, prefer a template that saves Spike logs under `{case_dir}` so the agent can inspect guest PC/instruction evidence.
+
+The matrix output is evidence only:
+
+- `summary.md` / `summary.json`: final per-case matrix.
+- `cases/<idx>_<case>/run.log`: Spike output.
+- `before_gcov` / `after_gcov`: isolated snapshots for that case.
+- `compare.md` / `compare.json`: counter movement and requirements result.
+
+Interpret `cases_with_counter_changes` as “this case moved some selected counters”, not as proof of a high-quality path. Upgrade to a path-confidence claim only after source review, target scope review, and must-pass requirement checks. If `cases_with_invalid_evidence` is nonempty, inspect the per-case compare before using it.
+
 Use `analyze_path_markers.py` when a coverage Spike has emitted path-marker JSONL/text logs:
 
 ```bash
@@ -371,6 +416,8 @@ selected_candidates:
     line_evidence_status:
     source_or_gcov_evidence:
     do_not_finalize_without:
+    dimension_gate:
+    same_flow_evidence:
     evidence_class: entry | shared-path | mixed
     evidence_class_reason:
     classification_confidence:

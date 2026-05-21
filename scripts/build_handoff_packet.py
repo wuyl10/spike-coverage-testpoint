@@ -26,16 +26,38 @@ def gcov_basename_for_entry(entry: str) -> str:
     return Path(entry).name + ".gcov"
 
 
+def is_instruction_entry(entry: str) -> bool:
+    cleaned = entry
+    while cleaned.startswith("../"):
+        cleaned = cleaned[3:]
+    return cleaned.startswith("riscv/insns/")
+
+
 def needs_agent(reason: str) -> str:
     return f"needs source confirmation: {reason}"
 
 
-def candidate_matches(candidate: dict[str, Any], selected: set[str]) -> bool:
+def candidate_search_text(candidate: dict[str, Any], target: dict[str, Any]) -> str:
+    dim = str(candidate.get("dimension", ""))
+    parts = [dim]
+    parts.extend(str(item) for item in candidate.get("entries", []))
+    parts.extend(str(item) for item in candidate.get("inspection_files", []))
+    for key in ("duplicate_search_terms", "duplicate_search_aliases", "inspection_hints"):
+        mapping = target.get(key, {})
+        if isinstance(mapping, dict):
+            values = mapping.get(dim, [])
+            if isinstance(values, list):
+                parts.extend(str(item) for item in values)
+    metadata = target.get("dimension_metadata", {})
+    if isinstance(metadata, dict) and isinstance(metadata.get(dim), dict):
+        parts.extend(str(value) for value in metadata[dim].values())
+    return " ".join(parts).lower()
+
+
+def candidate_matches(candidate: dict[str, Any], selected: set[str], target: dict[str, Any]) -> bool:
     if not selected:
         return True
-    dim = candidate.get("dimension", "")
-    entries = [short_name(item) for item in candidate.get("entries", [])]
-    haystack = " ".join([dim] + entries).lower()
+    haystack = candidate_search_text(candidate, target)
     return any(item.lower() in haystack for item in selected)
 
 
@@ -55,18 +77,24 @@ def line_evidence_for_dimension(
         for term in [dimension, *duplicate_search_terms, *[short_name(entry) for entry in representative_entries]]
         if term
     ]
+    entry_kind_by_gcov = {
+        gcov_basename_for_entry(entry): "instruction-entry" if is_instruction_entry(entry) else "shared-source-entry"
+        for entry in representative_entries
+    }
 
     def report_rank(report: dict[str, Any]) -> tuple[int, str]:
         gcov_name = Path(report.get("gcov_file", "")).name
-        if gcov_name in exact_wanted:
+        if gcov_name in exact_wanted and entry_kind_by_gcov.get(gcov_name) == "shared-source-entry":
             return (0, gcov_name)
-        if gcov_name in representative_gcov:
+        if gcov_name in exact_wanted:
             return (1, gcov_name)
-        if gcov_name in wanted and ".h.gcov" in gcov_name:
+        if gcov_name in representative_gcov:
             return (2, gcov_name)
-        if gcov_name in wanted:
+        if gcov_name in wanted and ".h.gcov" in gcov_name:
             return (3, gcov_name)
-        return (4, gcov_name)
+        if gcov_name in wanted:
+            return (4, gcov_name)
+        return (5, gcov_name)
 
     ordered_reports = sorted(
         inspect_reports,
@@ -75,7 +103,9 @@ def line_evidence_for_dimension(
 
     def classify_report(gcov_name: str) -> tuple[str, str]:
         if gcov_name in representative_gcov:
-            return "exact-entry", "exact representative entry .gcov was inspected"
+            if entry_kind_by_gcov.get(gcov_name) == "instruction-entry":
+                return "exact-instruction-entry", "exact instruction entry .gcov was inspected"
+            return "exact-shared-source-entry", "exact shared/source entry .gcov was inspected"
         if gcov_name in wanted:
             if any(term and term in gcov_name.lower() for term in semantic_terms):
                 return "dimension-shared-source", "inspection file name matches dimension or semantic terms"
@@ -90,7 +120,7 @@ def line_evidence_for_dimension(
         haystack = " ".join(haystack_parts).lower()
         return any(term and term in haystack for term in semantic_terms)
 
-    def collect(allow_shared: bool, prefer_semantic: bool) -> list[dict[str, Any]]:
+    def collect(allow_shared: bool, prefer_semantic: bool, limit: int) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         for report in ordered_reports:
             gcov_name = Path(report.get("gcov_file", "")).name
@@ -105,7 +135,7 @@ def line_evidence_for_dimension(
                 if matching:
                     functions = matching
             evidence_strength, strength_reason = classify_report(gcov_name)
-            for fn in functions[:max_items]:
+            for fn in functions[:limit]:
                 events = fn.get("events", [])
                 first = next((event for event in events if event.get("source_line") is not None), None)
                 counts: dict[str, int] = {}
@@ -124,18 +154,29 @@ def line_evidence_for_dimension(
                         "miss_kinds": counts,
                     }
                 )
-                if len(results) >= max_items:
+                if len(results) >= limit:
                     return results
         return results
 
-    results = collect(allow_shared=False, prefer_semantic=False)
-    if results:
-        return results
-    results = collect(allow_shared=True, prefer_semantic=True)
-    if results:
-        return results
-    results = collect(allow_shared=True, prefer_semantic=False)
-    return results
+    exact_results = collect(allow_shared=False, prefer_semantic=False, limit=max(1, max_items // 2))
+    shared_results = collect(allow_shared=True, prefer_semantic=True, limit=max_items)
+    combined: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, int | None, str | None]] = set()
+    for item in exact_results + shared_results:
+        key = (
+            str(item.get("gcov_file")),
+            str(item.get("function")),
+            item.get("first_source_line"),
+            str(item.get("first_evidence")),
+        )
+        if key not in seen:
+            combined.append(item)
+            seen.add(key)
+        if len(combined) >= max_items:
+            return combined
+    if combined:
+        return combined
+    return collect(allow_shared=True, prefer_semantic=False, limit=max_items)
 
 
 def line_evidence_status(
@@ -146,8 +187,14 @@ def line_evidence_status(
     if missing_files and not evidence:
         return "unreviewed-missing-files"
     strengths = {item.get("evidence_strength") for item in evidence}
-    if "exact-entry" in strengths:
-        return "exact-entry-evidence"
+    if "exact-shared-source-entry" in strengths:
+        return "exact-shared-source-evidence"
+    if "exact-instruction-entry" in strengths and (
+        "dimension-shared-source" in strengths or "exact-shared-source-entry" in strengths
+    ):
+        return "instruction-entry-plus-shared-source-evidence"
+    if "exact-instruction-entry" in strengths:
+        return "exact-instruction-entry-evidence"
     if "dimension-shared-source" in strengths:
         return "dimension-shared-source-evidence"
     if evidence:
@@ -159,11 +206,42 @@ def line_evidence_status(
 
 def do_not_finalize_without(status: str, missing_files: list[str]) -> list[str]:
     items: list[str] = []
-    if status in {"weak-inspection-hint-only", "no-line-evidence-from-requested-files", "unreviewed-missing-files"}:
+    if status in {
+        "exact-instruction-entry-evidence",
+        "weak-inspection-hint-only",
+        "no-line-evidence-from-requested-files",
+        "unreviewed-missing-files",
+    }:
         items.append("inspect exact entry .gcov files or source-priority shared files for this candidate")
     if missing_files:
         items.append("inspect missing files: " + ", ".join(missing_files[:8]))
     return items
+
+
+def same_flow_evidence_stub(candidate: dict[str, Any], evidence_status: str) -> dict[str, str]:
+    has_low_branch = bool(candidate.get("low_branch_entries"))
+    has_low_call = bool(candidate.get("low_call_entries"))
+    has_zero = bool(candidate.get("zero_entries"))
+    if has_zero:
+        status = "suite-summary-gap"
+        reason = "one or more candidate entries are zero in suite coverage; agent must confirm whether they are must-pass points for this path"
+        basis = "summary-zero-entry"
+    elif has_low_branch or has_low_call:
+        status = "aggregate-only"
+        reason = "line/branch/call counters are suite-level evidence; same-flow correlation needs single-case increment or path markers"
+        basis = "summary-low-branch-or-call"
+    else:
+        status = "none"
+        reason = "candidate has no path-correlation evidence in the handoff packet"
+        basis = "no-path-evidence"
+    if evidence_status in {"exact-instruction-entry-evidence", "weak-inspection-hint-only"}:
+        reason += "; current line evidence is not enough to prove shared MemBlock source flow"
+    return {
+        "status": status,
+        "basis": basis,
+        "reason": reason,
+        "required_to_upgrade": "single-case-increment-confirmed or marker-correlated evidence with pc+insn/seq/access_id",
+    }
 
 
 def missing_inspection_files(inspect_reports: list[dict[str, Any]], inspection_files: list[str]) -> list[str]:
@@ -234,6 +312,15 @@ def profile_gate_stub(candidate: dict[str, Any], target: dict[str, Any]) -> dict
     entries = ", ".join(candidate.get("entries", [])[:4])
     class_note = candidate.get("evidence_class", "unknown")
     inferred = infer_profile_from_entries(candidate.get("entries", []), str(candidate.get("dimension", "")))
+    dimension_gate = candidate.get("dimension_gate", {}) if isinstance(candidate.get("dimension_gate"), dict) else {}
+    gate_note = dimension_gate.get("gate_note") if isinstance(dimension_gate.get("gate_note"), str) else ""
+    manual_only = bool(dimension_gate.get("manual_only"))
+    default_allowed = dimension_gate.get("default_gate_allowed")
+    default_gate_eligible = needs_agent(
+        "yes/no/unknown after confirming feature availability and deterministic observable"
+    )
+    if manual_only or default_allowed is False:
+        default_gate_eligible = "no - target dimension is manual/special-run by target metadata"
     return {
         "extension_required": needs_agent(
             "infer required ISA/profile feature from source and representative entries"
@@ -244,14 +331,21 @@ def profile_gate_stub(candidate: dict[str, Any], target: dict[str, Any]) -> dict
             f"target spec profile={spec_profile or 'unspecified'}; "
             f"included={included}; excluded={excluded}"
         ),
-        "default_gate_eligible": needs_agent(
-            "yes/no/unknown after confirming feature availability and deterministic observable"
-        ),
+        "default_gate_eligible": default_gate_eligible,
         "profile_gate_note": (
-            f"evidence_class={class_note}; do not recommend default gate until profile and "
+            (gate_note + "; " if gate_note else "")
+            + f"evidence_class={class_note}; do not recommend default gate until profile and "
             "platform observability are checked"
         ),
     }
+
+
+def gate_note_for_candidate(candidate: dict[str, Any], handoff: dict[str, Any]) -> str:
+    dimension_gate = candidate.get("dimension_gate", {}) if isinstance(candidate.get("dimension_gate"), dict) else {}
+    gate_note = dimension_gate.get("gate_note") if isinstance(dimension_gate.get("gate_note"), str) else ""
+    if dimension_gate.get("manual_only") or dimension_gate.get("default_gate_allowed") is False:
+        return gate_note or "manual/special-run"
+    return handoff.get("default_gate_note", "needs profile decision")
 
 
 def build_packet(
@@ -277,7 +371,7 @@ def build_packet(
     candidates = [
         candidate
         for candidate in summary.get("candidates", [])
-        if candidate_matches(candidate, selected)
+            if candidate_matches(candidate, selected, summary.get("target", {}))
     ][:top]
 
     packet_candidates = []
@@ -295,15 +389,20 @@ def build_packet(
         )
         missing_files = missing_inspection_files(inspect_reports, inspection_files)
         evidence_status = line_evidence_status(line_evidence, inspection_files, missing_files)
+        same_flow_evidence = same_flow_evidence_stub(candidate, evidence_status)
         packet_candidates.append(
             {
                 "candidate_name": needs_agent(f"interpret {dimension} as an architecture-visible scenario"),
                 "coverage_dimension": dimension,
                 "evidence_class": candidate.get("evidence_class", "unknown"),
+                "evidence_class_reason": candidate.get("evidence_class_reason", ""),
+                "classification_confidence": candidate.get("classification_confidence", ""),
                 "coverage_evidence": candidate.get("evidence"),
                 "line_evidence_status": evidence_status,
                 "source_or_gcov_evidence": line_evidence,
                 "do_not_finalize_without": do_not_finalize_without(evidence_status, missing_files),
+                "dimension_gate": candidate.get("dimension_gate", {}),
+                "same_flow_evidence": same_flow_evidence,
                 "path_confidence": needs_agent(
                     "choose one after evidence review: "
                     + " | ".join(
@@ -332,7 +431,7 @@ def build_packet(
                 "duplicate_search_terms": duplicate_search_terms,
                 "suggested_test_point_area": handoff.get("suggested_test_point_area", ""),
                 "suggested_case_area": handoff.get("suggested_case_area", ""),
-                "gate_note": handoff.get("default_gate_note", "needs profile decision"),
+                "gate_note": gate_note_for_candidate(candidate, handoff),
                 "profile_questions": [
                     "hyptest-workflow must confirm spec_profile and gate applicability before writing cases",
                     "hyptest-workflow must confirm duplicate search before writing cases",
@@ -341,6 +440,12 @@ def build_packet(
                 "inspection_files": inspection_files,
                 "missing_inspection_files": missing_files,
                 "representative_entries": candidate.get("entries", []),
+                "entry_selection_reason": candidate.get("entry_selection_reason", ""),
+                "zero_entries": candidate.get("zero_entries", []),
+                "low_line_entries": candidate.get("low_line_entries", []),
+                "low_branch_entries": candidate.get("low_branch_entries", []),
+                "low_call_entries": candidate.get("low_call_entries", []),
+                "missing_entries": candidate.get("missing_entries", []),
                 "script_rationale": candidate.get("rationale"),
             }
         )
@@ -369,9 +474,23 @@ def print_markdown(packet: dict[str, Any]) -> None:
         print(f"- candidate_name: {candidate['candidate_name']}")
         print(f"- coverage_dimension: {candidate['coverage_dimension']}")
         print(f"- evidence_class: {candidate['evidence_class']}")
+        if candidate.get("evidence_class_reason"):
+            print(f"- evidence_class_reason: {candidate['evidence_class_reason']}")
+        if candidate.get("classification_confidence"):
+            print(f"- classification_confidence: {candidate['classification_confidence']}")
         print(f"- coverage_evidence: {candidate['coverage_evidence']}")
+        if candidate.get("entry_selection_reason"):
+            print(f"- entry_selection_reason: {candidate['entry_selection_reason']}")
         print(f"- line_evidence_status: {candidate['line_evidence_status']}")
+        if candidate.get("same_flow_evidence"):
+            print("- same_flow_evidence:")
+            for key, value in candidate["same_flow_evidence"].items():
+                print(f"  - {key}: {value}")
         print(f"- path_confidence: {candidate['path_confidence']}")
+        if candidate.get("dimension_gate"):
+            print("- dimension_gate:")
+            for key, value in candidate["dimension_gate"].items():
+                print(f"  - {key}: {value}")
         if candidate.get("path_signature"):
             print("- path_signature:")
             for axis, value in candidate["path_signature"].items():
@@ -403,6 +522,11 @@ def print_markdown(packet: dict[str, Any]) -> None:
                 print(f"  - {item}")
         if candidate["representative_entries"]:
             print("- representative_entries: `" + "`, `".join(candidate["representative_entries"][:8]) + "`")
+        for field in ("zero_entries", "low_line_entries", "low_branch_entries", "low_call_entries"):
+            if candidate.get(field):
+                print(f"- {field}: `" + "`, `".join(candidate[field][:8]) + "`")
+        if candidate.get("missing_entries"):
+            print("- missing_entries: `" + "`, `".join(candidate["missing_entries"][:8]) + "`")
         if candidate["source_or_gcov_evidence"]:
             print("- source_or_gcov_evidence:")
             for item in candidate["source_or_gcov_evidence"]:

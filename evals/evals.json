@@ -24,7 +24,10 @@
         "Does not leave raw TODO(agent) placeholders in the final user-facing handoff.",
         "Separates entry coverage gaps from shared semantic path gaps.",
         "Reports line_evidence_status and does not finalize weak inspection hints as strong source evidence.",
-        "Mentions evidence_class_reason or classification confidence when relying on candidate ranking."
+        "Mentions evidence_class_reason or classification confidence when relying on candidate ranking.",
+        "Reports same_flow_evidence and does not claim same-flow path coverage from aggregate branch/call coverage alone.",
+        "Reports low_call_entries when call-only gaps are present.",
+        "Distinguishes missing target entries from 0% covered entries when gcov snapshot lacks a target entry."
       ]
     },
     {
@@ -55,7 +58,8 @@
         "Excludes scenarios listed in target scope_out.",
         "Proposes self-checkable candidates with trap/memory/register observables.",
         "Marks paths with aggregate-only branch/call evidence as edge-covered-path-unknown when same-flow correlation is not proven.",
-        "Marks memtracer/log style points as manual or special-run when appropriate."
+        "Marks memtracer/log style points as manual or special-run when appropriate.",
+        "Uses dimension_gate/manual-only metadata before recommending default-gate cases."
       ]
     },
     {
@@ -74,6 +78,7 @@
         "Distinguishes semantic branches from defensive abort/default paths.",
         "Translates at least three uncovered code paths into architecture-visible in-scope test ideas.",
         "Includes required evidence points and path confidence for path-sensitive candidates.",
+        "Includes same_flow_evidence for path-sensitive candidates and downgrades aggregate-only evidence.",
         "Marks special-run paths such as tracer/log separately when encountered.",
         "Does not modify hyptest source files.",
         "Reports excluded-by-filter counts and treats high filter counts as a caveat.",
@@ -128,7 +133,8 @@
         "Does not modify hyptest source files.",
         "Includes profile_gate fields before recommending any default-gate implementation.",
         "Includes line_evidence_status and do_not_finalize_without fields in the handoff packet.",
-        "Runs or recommends strict handoff final checking before using the packet for implementation."
+        "Includes same_flow_evidence in the handoff packet.",
+        "Runs or recommends strict handoff/final-report checking before using the packet for implementation."
       ]
     },
     {
@@ -150,7 +156,24 @@
         "Treats marker-sequence-observed as marker evidence and text-marker-sequence-observed-weak as weak evidence, not final proof by itself.",
         "Explains that strong marker evidence requires pc+insn, seq, or access_id correlation fields.",
         "Mentions possible key drift or stable-line matching when comparing before/after gcov snapshots.",
-        "Requires numeric branch/call counts for single-case increment proof and downgrades percentage-only snapshots as not-comparable-counter-format."
+        "Requires numeric branch/call counts for single-case increment proof and downgrades percentage-only snapshots as not-comparable-counter-format.",
+        "Uses requirements-json or require-event style must-pass checks before claiming all required single-case coverage points passed.",
+        "Uses marker group-by access_id, seq, or pc when markers for one dynamic path are split across records."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "用 targets/memblock_non_h.json focus XSError，看看 micro cache error/NMI 这类覆盖率缺口怎么处理，只做分析不要写 case。",
+      "expected_output": "Focuses through target duplicate search terms or aliases, finds the micro cache error/NMI dimension, treats it as manual/special-run by dimension_gate metadata, and avoids recommending default-gate tests unless deterministic injection exists.",
+      "files": [
+        "/nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/memblock_non_h.json"
+      ],
+      "assertions": [
+        "Focuses on micro cache error/NMI paths when the prompt uses XSError.",
+        "Uses duplicate_search_terms or duplicate_search_aliases instead of relying only on file names.",
+        "Reports dimension_gate and marks default_gate_allowed=false/manual-only as manual/special-run.",
+        "Does not recommend a default gate case without deterministic cache-error/NMI injection evidence.",
+        "Mentions that scripts collect evidence while the agent must judge scenario value and observability."
       ]
     }
   ]

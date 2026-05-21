@@ -29,6 +29,9 @@ not in `SKILL.md` and not hardcoded in scripts.
   counts in analysis when filters may hide meaningful evidence.
 - `line_priority_regex`: optional ranking hints for `inspect_gcov_lines.py`.
   Matching functions are printed earlier, without hiding non-matching evidence.
+- `coverage_thresholds`: optional low-coverage thresholds used by
+  `analyze_spike_gcov.py`. Supported keys are `low_line_pct`,
+  `low_branch_pct`, and `low_call_pct`; defaults are 20/10/10.
 - `dimensions`: coverage groups used by `analyze_spike_gcov.py`.
 - `path_analysis`: optional path-sensitive evidence policy. Use it for path
   confidence labels, reporting checklists, single-case increment rules, and
@@ -41,7 +44,12 @@ not in `SKILL.md` and not hardcoded in scripts.
   line-level inspection pass. The summary script prints these hints in the
   ranked evidence table.
 - `duplicate_search_terms`: optional terms the agent should use when checking
-  existing hyptest coverage before proposing implementation.
+  existing hyptest coverage before proposing implementation. Prefer keys that
+  match `dimensions`; validator warns on extra keys so aliases stay explicit.
+- `duplicate_search_aliases`: optional aliases for dimension names. These also
+  help focused summary searches find dimensions by semantic words that do not
+  appear in source file names. Gate matching uses exact dimension names or
+  these explicit aliases, not broad substring matching.
 - `handoff_defaults`: default suggested locations and gate note for the
   hyptest-workflow handoff packet. It is advisory only; hyptest-workflow still
   performs its own profile/gate checks.
@@ -51,12 +59,25 @@ not in `SKILL.md` and not hardcoded in scripts.
   gate without an explicit target/profile decision.
 - `dimension_metadata`: optional per-dimension metadata such as
   `default_gate_allowed`, `requires_runtime_option`, and a dimension-specific
-  `gate_note`.
+  `gate_note`. Summary and handoff scripts propagate this into candidate
+  `dimension_gate`; manual-only dimensions must not become default-gate
+  recommendations without an explicit target/profile decision.
 
 `build_handoff_packet.py` also reports `missing_inspection_files` when the
 summary recommends `.gcov` files that were not included in the line-level
 inspection JSON. Treat those as next files to inspect before finalizing a
 test-point card.
+
+`build_handoff_packet.py` reports `same_flow_evidence` separately from
+line/branch/call coverage. Treat `aggregate-only` as "edges were seen somewhere
+in the suite, but one dynamic instruction/access path is not proven"; upgrade
+only with single-case increment evidence or correlated path markers.
+Treat `suite-summary-gap` as a summary-level clue only; the agent must identify
+the must-pass source events before calling a path confirmed-not-executed.
+
+`analyze_spike_gcov.py` reports `missing_entries_by_dimension` when a target
+entry does not appear in the selected gcov snapshot. This is not the same as 0%
+coverage; it may mean a Spike version/profile/build did not emit that entry.
 
 ## Path Analysis
 
