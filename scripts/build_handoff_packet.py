@@ -9,6 +9,8 @@ architecture interpretation fields for the agent to fill.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 from pathlib import Path
 from typing import Any
@@ -462,6 +464,34 @@ def build_packet(
 
 
 def print_markdown(packet: dict[str, Any]) -> None:
+    candidates = packet.get("selected_candidates", [])
+    default_ready = sum(
+        1
+        for candidate in candidates
+        if str((candidate.get("profile_gate") or {}).get("default_gate_eligible", "")).startswith("yes")
+    )
+    print("# hyptest-workflow handoff packet")
+    print()
+    print("## Conclusion")
+    print()
+    print(f"- Selected candidates: {len(candidates)}; default-gate-ready candidates: {default_ready}.")
+    print("- This packet organizes evidence for hyptest-workflow; it is not permission to write cases without user request.")
+    print("- Agent must replace unresolved source/profile/observable fields before treating this as final implementation guidance.")
+    print()
+    print("## Data")
+    print()
+    print(f"- target_name: `{packet.get('target_name')}`")
+    print(f"- path_analysis_available: {packet.get('path_analysis_available')}")
+    print(f"- scope_out_count: {len(packet.get('target_scope_out', []))}")
+    print()
+    print("## Limits / Next steps")
+    print()
+    print("- Handoff fields marked `needs source confirmation` are not final test-point decisions.")
+    print("- Resolve scope/profile/observable fields before using hyptest-workflow to implement cases.")
+    print("- If same-flow evidence is aggregate-only, confirm with single-case increment or path markers.")
+    print()
+    print("## Evidence")
+    print()
     print("## hyptest-workflow handoff packet")
     print()
     print(f"- target_file: `{packet.get('target_file')}`")
@@ -538,6 +568,13 @@ def print_markdown(packet: dict[str, Any]) -> None:
         print()
 
 
+def render_markdown(packet: dict[str, Any]) -> str:
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        print_markdown(packet)
+    return buf.getvalue()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--summary-json", required=True, type=Path, help="JSON from analyze_spike_gcov.py")
@@ -547,6 +584,7 @@ def main() -> int:
     parser.add_argument("--max-line-evidence", type=int, default=4, help="line evidence items per candidate")
     parser.add_argument("--json-out", type=Path, help="write packet JSON")
     parser.add_argument("--markdown", action="store_true", help="print markdown")
+    parser.add_argument("--markdown-out", type=Path, help="write markdown report to this path")
     args = parser.parse_args()
 
     summary = json.loads(args.summary_json.read_text(errors="replace"))
@@ -566,7 +604,11 @@ def main() -> int:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
         args.json_out.write_text(json.dumps(packet, indent=2, ensure_ascii=False) + "\n")
 
-    if args.markdown or not args.json_out:
+    if args.markdown_out:
+        args.markdown_out.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown_out.write_text(render_markdown(packet), encoding="utf-8")
+
+    if args.markdown or (not args.json_out and not args.markdown_out):
         print_markdown(packet)
     return 0
 

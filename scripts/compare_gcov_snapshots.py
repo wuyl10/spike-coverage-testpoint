@@ -14,6 +14,8 @@ Use it after running one small case with a coverage Spike and regenerating
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import re
 import subprocess
@@ -494,6 +496,43 @@ def detect_possible_key_drift(deltas: list[EventDelta]) -> list[dict[str, Any]]:
 
 
 def print_markdown(result: dict[str, Any], limit: int) -> None:
+    summary = result["summary"]
+    status_counts = summary.get("status_counts", {})
+    changed = int(status_counts.get("newly-covered", 0)) + int(status_counts.get("increased", 0))
+    invalid = sum(
+        int(status_counts.get(name, 0))
+        for name in ("decreased-or-reset", "missing-after-event", "not-comparable-counter-format", "missing-before-event")
+    )
+    print("# Single-case gcov increment evidence")
+    print()
+    print("## Conclusion")
+    print()
+    print(f"- Counter movement events: {changed}; invalid/unsafe evidence events: {invalid}.")
+    if result.get("requirements") and result["requirements"].get("requirement_count"):
+        req = result["requirements"]
+        print(
+            f"- Required evidence: all_required_passed={req['all_required_passed']} "
+            f"({req['passed']}/{req['requirement_count']} passed, failed={req['failed']}, missing={req['missing']})."
+        )
+    else:
+        print("- No explicit must-pass requirements were provided; movement is evidence, not path proof.")
+    print("- Positive path claims still require source review, target PC/instruction evidence, and target-scope checks.")
+    print()
+    print("## Data")
+    print()
+    print(f"- files compared: {len(result.get('files', []))}")
+    print(f"- missing_before_files: {len(result.get('missing_before_files', []))}")
+    print(f"- missing_after_files: {len(result.get('missing_after_files', []))}")
+    print(f"- key_mode: `{result['key_mode']}`")
+    print()
+    print("## Limits / Next steps")
+    print()
+    print("- Counter deltas are not full path proof unless required points all pass in a tiny isolated case.")
+    print("- Invalid statuses such as decreased/reset, missing events/files, or not-comparable counter format must be explained first.")
+    print("- Add `--require-event` or `--requirements-json` for must-pass evidence before upgrading path confidence.")
+    print()
+    print("## Evidence")
+    print()
     print("## Single-case gcov increment evidence")
     print()
     print(f"- before_dir: `{result['before_dir']}`")
@@ -597,6 +636,13 @@ def print_markdown(result: dict[str, Any], limit: int) -> None:
         print()
 
 
+def render_markdown(result: dict[str, Any], limit: int) -> str:
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        print_markdown(result, limit)
+    return buf.getvalue()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--before-dir", required=True, type=Path, help="directory containing baseline .gcov files")
@@ -624,6 +670,7 @@ def main() -> int:
     )
     parser.add_argument("--json-out", type=Path, help="write machine-readable comparison JSON")
     parser.add_argument("--markdown", action="store_true", help="print markdown")
+    parser.add_argument("--markdown-out", type=Path, help="write markdown report to this path")
     parser.add_argument("--limit", type=int, default=40, help="rows per markdown section")
     args = parser.parse_args()
 
@@ -675,7 +722,11 @@ def main() -> int:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
         args.json_out.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
 
-    if args.markdown or not args.json_out:
+    if args.markdown_out:
+        args.markdown_out.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown_out.write_text(render_markdown(result, args.limit), encoding="utf-8")
+
+    if args.markdown or (not args.json_out and not args.markdown_out):
         print_markdown(result, args.limit)
     return 0
 

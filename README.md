@@ -180,6 +180,45 @@ ai_xxx、ai_yyy、ai_zzz。
 
 ## 输出应该长什么样
 
+所有分析任务都要有 `.md` 产物留档，不能只停在终端输出。脚本证据报告和 agent 最终分析报告都应该放在明确路径下。
+
+每个 `.md` 至少要有：
+
+- `Conclusion`: 当前覆盖率结论，哪些地方最缺，哪些证据能/不能用。
+- `Data`: target、输入路径、case 数、runner 状态、覆盖计数等数据。
+- `Evidence`: 具体 `.gcov`、函数、源码行、branch/call、case log、compare 文件。
+- `Limits / Next steps`: 不能证明什么，下一步要 inspect、单 case 增量、path marker，还是交给 `hyptest-workflow`。
+
+默认输出路径规则：
+
+```text
+正式 md 报告：
+/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/reports/<target_name>/<run_tag>/
+
+正式运行证据：
+/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_runs/<target_name>/<run_tag>/
+
+临时试跑：
+/tmp/spike_cov_<target_name>_<purpose>/
+```
+
+除非 prompt 明确指定固定输出路径，否则 agent 自己按上面规则选最佳路径。
+`target_name` 来自 target JSON 的 `name` 字段，例如 `memblock_non_h`。
+`run_tag` 用日期加目的，例如 `20260521_current`、`20260521_all_cases`、
+`20260521_after_new_mem_cases`。不要把运行结果放在 skill 目录里；skill
+目录只保存工具、target、reference 和 README。
+
+推荐文件名：
+
+```text
+summary.md          总体覆盖率结论和排名
+line.md             行/分支/call 证据
+compare.md          单 case 增量覆盖证据
+path_markers.md     path marker 序列证据
+handoff.md          给 hyptest-workflow 的交接证据包
+testpoint_plan.md   agent 最终测试点分析报告
+```
+
 一次好的分析应该至少包含：
 
 - 覆盖率输入：target、summary、gcov 目录。
@@ -201,6 +240,13 @@ ai_xxx、ai_yyy、ai_zzz。
 ## 高级：手动跑脚本
 
 通常不需要用户手动跑脚本，直接 prompt Codex 即可。需要复现或调试时可以这样跑。
+如果不是临时试跑，先设定正式报告和运行证据目录：
+
+```bash
+REPORT_DIR=/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/reports/memblock_non_h/20260521_current
+RUN_DIR=/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_runs/memblock_non_h/20260521_current
+mkdir -p "$REPORT_DIR" "$RUN_DIR"
+```
 
 校验 target：
 
@@ -215,8 +261,8 @@ python3 scripts/analyze_spike_gcov.py \
   --summary /nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/gcov_raw/gcov_memblock_non_h_summary.txt \
   --target targets/memblock_non_h.json \
   --top 18 \
-  --json-out /tmp/spike_cov_memblock_analysis/summary.json \
-  --markdown > /tmp/spike_cov_memblock_analysis/summary.md
+  --json-out "$RUN_DIR/summary.json" \
+  --markdown-out "$REPORT_DIR/summary.md"
 ```
 
 精查 `.gcov`：
@@ -230,30 +276,30 @@ python3 scripts/inspect_gcov_lines.py \
   --file mmu.h.gcov \
   --file v_ext_macros.h.gcov \
   --context 4 \
-  --json-out /tmp/spike_cov_memblock_analysis/line.json \
-  --markdown > /tmp/spike_cov_memblock_analysis/line.md
+  --json-out "$RUN_DIR/line.json" \
+  --markdown-out "$REPORT_DIR/line.md"
 ```
 
 生成交接包骨架：
 
 ```bash
 python3 scripts/build_handoff_packet.py \
-  --summary-json /tmp/spike_cov_memblock_analysis/summary.json \
-  --inspect-json /tmp/spike_cov_memblock_analysis/line.json \
+  --summary-json "$RUN_DIR/summary.json" \
+  --inspect-json "$RUN_DIR/line.json" \
   --top 8 \
-  --markdown > /tmp/spike_cov_memblock_analysis/handoff.md
+  --markdown-out "$REPORT_DIR/handoff.md"
 ```
 
 最终回答前检查是否还残留裸 TODO：
 
 ```bash
-python3 scripts/check_handoff_final.py --strict-handoff /tmp/spike_cov_memblock_analysis/handoff.md
+python3 scripts/check_handoff_final.py --strict-handoff "$REPORT_DIR/handoff.md"
 ```
 
 如果是最终要贴给用户的完成版报告，再加严格检查，避免保留通用 skeleton 字段：
 
 ```bash
-python3 scripts/check_handoff_final.py --strict-final-report /tmp/spike_cov_memblock_analysis/final_report.md
+python3 scripts/check_handoff_final.py --strict-final-report "$REPORT_DIR/final_report.md"
 ```
 
 比较单 case 前后 `.gcov` 快照：
@@ -267,7 +313,8 @@ python3 scripts/compare_gcov_snapshots.py \
   --file mmu.h.gcov \
   --file v_ext_macros.h.gcov \
   --require-event mmu.cc.gcov:branch:1234:0 \
-  --markdown
+  --json-out "$RUN_DIR/compare.json" \
+  --markdown-out "$REPORT_DIR/compare.md"
 ```
 
 一键逐条跑 ELF 并生成最终 coverage matrix：
@@ -282,7 +329,7 @@ python3 scripts/run_case_coverage_matrix.py \
   --all-elves \
   --limit 20 \
   --gcno-from-target \
-  --out-dir /tmp/spike_cov_case_matrix_memblock_20
+  --out-dir "$RUN_DIR/case_matrix_20"
 ```
 
 全量跑完所有 mapped ELF：
@@ -296,7 +343,7 @@ python3 scripts/run_case_coverage_matrix.py \
   --elf-dir /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1/case_elf_asm/spike \
   --all-elves \
   --gcno-from-target \
-  --out-dir /tmp/spike_cov_case_matrix_memblock_all
+  --out-dir "$RUN_DIR/case_matrix_all"
 ```
 
 只跑名字像 MemBlock/访存相关的 ELF，适合先收一版更聚焦的证据：
@@ -311,7 +358,7 @@ python3 scripts/run_case_coverage_matrix.py \
   --all-elves \
   --case-regex 'memblock|pbmt|pte|pmp|pma|amo|lr|sc|load|store|vector|trigger|fault|unaligned|misalign' \
   --gcno-from-target \
-  --out-dir /tmp/spike_cov_case_matrix_memblock_filtered
+  --out-dir "$RUN_DIR/case_matrix_filtered"
 ```
 
 只跑指定 case：
@@ -325,7 +372,7 @@ python3 scripts/run_case_coverage_matrix.py \
   --case ai_case_a \
   --case ai_case_b \
   --gcno-from-target \
-  --out-dir /tmp/spike_cov_case_matrix_selected
+  --out-dir "$RUN_DIR/case_matrix_selected"
 ```
 
 常用选项：
@@ -350,12 +397,13 @@ python3 scripts/run_case_coverage_matrix.py \
 全量跑完后，下一步让 agent 分析补点时直接给这类 prompt：
 
 ```text
-用 spike-coverage-testpoint 分析 /tmp/spike_cov_case_matrix_memblock_all/summary.json 和 summary.md。
+用 spike-coverage-testpoint 分析 $RUN_DIR/case_matrix_all/summary.json 和 summary.md。
 目标仍然是 targets/memblock_non_h.json。
 请只把 PASS 且 in-scope 的 counter movement 当正向覆盖线索；
 MISSING_ELF、RUNNER_ERROR、MARKER_MISMATCH、TIMEOUT 只能作为诊断线索；
 `pass-counter-evidence-scope-review-required` 先按 target scope 判断，不要直接算 MemBlock non-H 正向证据。
 请结合 Spike 源码和 .gcov still-zero/entry/header movement，输出还缺哪些高质量测试场景、测试点、observable、gate note 和 hyptest-workflow handoff。
+请把最终分析保存成 $REPORT_DIR/testpoint_plan.md，报告必须包含 Conclusion、Data、Evidence、Limits / Next steps，并在 Data/Evidence 里链接 $RUN_DIR/case_matrix_all。
 不要直接写 case。
 ```
 
@@ -379,7 +427,7 @@ python3 scripts/analyze_path_markers.py \
   --require mem.fault.page \
   --ordered \
   --group-by access_id \
-  --markdown
+  --markdown-out "$REPORT_DIR/path_markers_grouped.md"
 ```
 
 解析 path marker 日志：
@@ -391,7 +439,7 @@ python3 scripts/analyze_path_markers.py \
   --require mem.translate.tlb_miss_walk \
   --require mem.fault.page \
   --ordered \
-  --markdown
+  --markdown-out "$REPORT_DIR/path_markers.md"
 ```
 
 改 skill 或脚本后跑 smoke：

@@ -12,6 +12,8 @@ preferred because it preserves per-instruction correlation.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import re
 from dataclasses import asdict, dataclass
@@ -290,6 +292,39 @@ def summarize_correlation_strength(records: list[MarkerRecord]) -> dict[str, int
 
 
 def print_markdown(result: dict[str, Any], top_markers: int) -> None:
+    observed = sum(
+        1
+        for item in result.get("sequence_results", [])
+        if "observed" in str(item.get("status", ""))
+    )
+    weak = sum(
+        1
+        for item in result.get("sequence_results", [])
+        if "weak" in str(item.get("status", ""))
+    )
+    print("# Path-marker evidence")
+    print()
+    print("## Conclusion")
+    print()
+    print(
+        f"- Records parsed: {result['record_count']}; required sequences observed={observed}; weak observations={weak}."
+    )
+    print("- Marker evidence proves marker sequence presence only; final architecture proof still requires marker placement and observable review.")
+    print()
+    print("## Data")
+    print()
+    print(f"- group_by: `{result.get('group_by') or '-'}`")
+    print(f"- marker kinds: {len(result.get('marker_counts', []))}")
+    print(f"- required sequences: {len(result.get('sequence_results', []))}")
+    print()
+    print("## Limits / Next steps")
+    print()
+    print("- Marker sequence presence is not final architecture proof by itself.")
+    print("- Strong confidence requires marker placement review plus pc/insn, seq, or access_id correlation.")
+    print("- Weak JSON/text evidence should stay downgraded until instrumentation is strengthened.")
+    print()
+    print("## Evidence")
+    print()
     print("## Path-marker evidence")
     print()
     print(f"- log: `{result['log']}`")
@@ -337,6 +372,13 @@ def print_markdown(result: dict[str, Any], top_markers: int) -> None:
         print(f"- `{item['marker']}`: {item['records']}")
 
 
+def render_markdown(result: dict[str, Any], top_markers: int) -> str:
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        print_markdown(result, top_markers)
+    return buf.getvalue()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--log", required=True, type=Path, help="path marker JSONL/text log")
@@ -350,6 +392,7 @@ def main() -> int:
     )
     parser.add_argument("--json-out", type=Path, help="write machine-readable JSON")
     parser.add_argument("--markdown", action="store_true", help="print markdown")
+    parser.add_argument("--markdown-out", type=Path, help="write markdown report to this path")
     parser.add_argument("--top-markers", type=int, default=40, help="number of marker counts to print")
     args = parser.parse_args()
 
@@ -369,7 +412,11 @@ def main() -> int:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
         args.json_out.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
 
-    if args.markdown or not args.json_out:
+    if args.markdown_out:
+        args.markdown_out.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown_out.write_text(render_markdown(result, args.top_markers), encoding="utf-8")
+
+    if args.markdown or (not args.json_out and not args.markdown_out):
         print_markdown(result, args.top_markers)
     return 0
 

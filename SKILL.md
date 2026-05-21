@@ -49,6 +49,69 @@ Do not use this skill for pure hyptest failure triage; use `$hyptest-failure-tri
 
 ## Output Contract
 
+Every coverage task must leave a Markdown artifact on disk, not only terminal text. For script-driven work, use `--markdown-out <path>` when available; for per-case matrix work, `run_case_coverage_matrix.py` always writes `summary.md` and per-case `compare.md` under `--out-dir`. If the user asks for a final analysis, also save an agent-authored `.md` report in the same output directory or an explicit user path.
+
+Every Markdown report must include these sections near the top:
+
+```text
+Conclusion: what the current coverage situation means
+Data: target, input paths, case counts, coverage counts, runner statuses
+Evidence: exact files/functions/lines/branches/calls/case logs used
+Limits / Next steps: what is not proven and what to inspect or run next
+```
+
+When a bundled script supports both `--markdown` and `--markdown-out`, prefer
+`--markdown-out` for durable reports. Use `--markdown` only when the user also
+wants terminal output. In the final response, mention the exact `.md` path that
+contains the conclusion, evidence, and data.
+
+## Output Path Policy
+
+If the user gives an explicit output path, use it exactly. If the user only asks
+for analysis, reports, or "run and analyze" without a path, choose a stable path
+automatically instead of asking.
+
+Use this default structure:
+
+```text
+Official Spike coverage repo:
+  /nfs/home/wuyuanlong/workspace/offical-spike-coverage
+
+Human-readable Markdown reports:
+  <coverage_repo>/cov_doc/reports/<target_name>/<run_tag>/
+
+Machine/raw run evidence:
+  <coverage_repo>/cov_runs/<target_name>/<run_tag>/
+
+Temporary trial runs only:
+  /tmp/spike_cov_<target_name>_<purpose>/
+```
+
+Default report filenames:
+
+```text
+summary.md          First-pass coverage ranking and conclusion
+line.md             Line/branch/call inspection evidence
+compare.md          Single-case before/after gcov delta evidence
+path_markers.md     Path-marker sequence evidence
+handoff.md          hyptest-workflow handoff skeleton/evidence packet
+testpoint_plan.md   Agent-authored final test-point analysis
+```
+
+For one-click per-case matrix runs, put the full run directory under
+`cov_runs/<target_name>/<run_tag>/`. Its `summary.md`, per-case `compare.md`,
+JSON, logs, and before/after snapshots stay together there. If the user also
+wants a polished final analysis, save `testpoint_plan.md` under
+`cov_doc/reports/<target_name>/<run_tag>/` and link back to the matrix run dir in
+the Data/Evidence section.
+
+Choose `<target_name>` from the target JSON `name` field, such as
+`memblock_non_h`. Choose `<run_tag>` from the current date plus purpose, for
+example `20260521_current`, `20260521_all_cases`,
+`20260521_after_new_mem_cases`, or `20260521_path_marker_trial`. Avoid writing
+analysis outputs inside the skill directory; the skill directory is tool source,
+not a result store.
+
 The deliverable is a ranked set of **coverage-backed test-point cards**. Each card should answer:
 
 ```text
@@ -165,14 +228,14 @@ If the user provides different paths, use those.
    - Filter using the target file only. Do not add hidden exclusions in the script.
 
 4. **Rank coverage evidence**
-   - First pass: use `scripts/analyze_spike_gcov.py --target <target.json> --top <N> --markdown`.
+   - First pass: use `scripts/analyze_spike_gcov.py --target <target.json> --top <N> --markdown-out <out>/summary.md --json-out <out>/summary.json`.
    - Treat the score as a triage hint only. It is based on 0% entries and low line/branch/call coverage; it is not a semantic test quality score.
    - Read `evidence_class`, `evidence_class_reason`, `classification_confidence`, `entry_selection_reason`, and `dimension_gate`. Prefer `shared-path` when the user's goal is semantic/path coverage. Treat `mixed` as "entry evidence that needs shared source review"; treat `entry` as profile-gated entry evidence until source review shows value.
    - Do not turn this ranking directly into test points without source/gcov inspection and agent reasoning.
    - If a high-ranked gap is only an instruction entry, inspect shared paths or mark it as `entry-only evidence`.
 
 5. **Inspect exact uncovered code before proposing detailed tests**
-   - For top gaps, run `inspect_gcov_lines.py` on the relevant `.gcov` files with the same `--target`.
+   - For top gaps, run `inspect_gcov_lines.py` on the relevant `.gcov` files with the same `--target`, using both `--json-out <out>/lines.json` and `--markdown-out <out>/lines.md`.
    - Report `excluded by filters` counts when filters hide evidence; if many functions/events are excluded, mention that filtered evidence could affect ranking or candidate completeness.
    - Then open `.gcov` and source around the most important misses when needed.
    - Look for `#####`, never-executed branches, and never-executed calls.
@@ -203,6 +266,7 @@ If the user provides different paths, use those.
 
 8. **Output an actionable plan**
    - Give evidence first: target, file/coverage/line/branch/call and exact gap.
+   - Save the final agent-authored analysis as Markdown when the task asks for an analysis result beyond raw script evidence. Use a clear path such as `<out_dir>/testpoint_plan.md`, `<out_dir>/final_report.md`, or the user-provided path.
    - Include path confidence and explain whether the evidence is an entry, edge, single-case increment, or marker-sequence proof.
    - Include `line_evidence_status` and do not finalize candidates marked `weak-inspection-hint-only`, `no-line-evidence-from-requested-files`, or `unreviewed-missing-files` without more source/gcov review.
    - Include `same_flow_evidence`. If it says `aggregate-only`, do not claim a same instruction/access flow was covered; require single-case increment or correlated path markers.
@@ -218,11 +282,16 @@ If the user provides different paths, use those.
 Use `analyze_spike_gcov.py` for the first pass when a gcov summary is available:
 
 ```bash
+REPORT_DIR=/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/reports/<target_name>/<run_tag>
+RUN_DIR=/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_runs/<target_name>/<run_tag>
+mkdir -p "$REPORT_DIR" "$RUN_DIR"
+
 python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/analyze_spike_gcov.py \
   --summary /path/to/gcov_summary.txt \
   --target /path/to/target.json \
   --top 12 \
-  --markdown
+  --json-out "$RUN_DIR/summary.json" \
+  --markdown-out "$REPORT_DIR/summary.md"
 ```
 
 Useful options:
@@ -232,6 +301,7 @@ Useful options:
 --focus amocas        Only rank dimensions/entries containing "amocas"
 --top 20             Show more evidence rows
 --json-out path       Save machine-readable summary for later comparison
+--markdown-out path   Save Markdown report with conclusion/data/evidence
 ```
 
 The script is an aid, not a substitute for source review. Use it to identify dimensions and 0% entries, then inspect source/gcov around the highest-value gaps.
@@ -254,7 +324,8 @@ python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/ins
   --file v_ext_macros.h.gcov \
   --context 6 \
   --max-functions 10 \
-  --markdown
+  --json-out "$RUN_DIR/lines.json" \
+  --markdown-out "$REPORT_DIR/lines.md"
 ```
 
 Optional evidence-only filtering can be added with repeated `--exclude-regex`, but prefer target-file filters for stable scope:
@@ -280,7 +351,7 @@ python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/bui
   --summary-json /path/to/summary.json \
   --inspect-json /path/to/inspect.json \
   --top 5 \
-  --markdown
+  --markdown-out "$REPORT_DIR/handoff.md"
 ```
 
 This only builds a packet skeleton. The agent must fill `target_semantic`, `scope_status`, `expected_observable`, `profile_gate`, and final `gate_note` from source review and architecture reasoning.
@@ -296,7 +367,7 @@ python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/com
   --file mmu.cc.gcov \
   --file mmu.h.gcov \
   --file v_ext_macros.h.gcov \
-  --markdown
+  --markdown-out "$REPORT_DIR/compare.md"
 ```
 
 Interpretation:
@@ -324,7 +395,7 @@ python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/run
   --all-elves \
   --limit 20 \
   --gcno-from-target \
-  --out-dir /tmp/spike_cov_case_matrix
+  --out-dir "$RUN_DIR/case_matrix"
 ```
 
 Useful selectors:
@@ -360,7 +431,7 @@ python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/ana
   --require mem.translate.tlb_miss_walk \
   --require mem.fault.page \
   --ordered \
-  --markdown
+  --markdown-out "$REPORT_DIR/path_markers.md"
 ```
 
 Preferred marker log format:

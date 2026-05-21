@@ -871,7 +871,8 @@ def compare_snapshots(
         str(args.target),
         "--json-out",
         str(compare_json),
-        "--markdown",
+        "--markdown-out",
+        str(compare_md),
         "--key-mode",
         args.key_mode,
         "--limit",
@@ -897,7 +898,12 @@ def compare_snapshots(
         errors="replace",
         check=False,
     )
-    compare_md.write_text((completed.stdout or "") + (completed.stderr or ""), encoding="utf-8", errors="replace")
+    if completed.stdout or completed.stderr:
+        compare_md.with_suffix(".log").write_text(
+            (completed.stdout or "") + (completed.stderr or ""),
+            encoding="utf-8",
+            errors="replace",
+        )
     if not compare_json.exists():
         compare_json.write_text(
             json.dumps(
@@ -1394,6 +1400,40 @@ def format_suggestions(result: dict[str, Any], limit: int = 4) -> str:
 def write_markdown_report(payload: dict[str, Any], path: Path) -> None:
     lines: list[str] = []
     lines.append("# Spike per-case coverage matrix")
+    lines.append("")
+    lines.append("## Conclusion")
+    lines.append("")
+    status_counts = payload.get("runner_status_counts", {})
+    status_text = ", ".join(f"{status}={count}" for status, count in sorted(status_counts.items())) or "no cases executed"
+    cov_counts = payload.get("coverage_status_counts", {})
+    changed = int(cov_counts.get("newly-covered", 0)) + int(cov_counts.get("increased", 0))
+    still_zero = int(cov_counts.get("still-zero", 0))
+    lines.append(f"- Runner status: {status_text}.")
+    lines.append(f"- Coverage movement: changed counters={changed}, still-zero events={still_zero}.")
+    lines.append(
+        f"- Positive evidence candidates: PASS counter-movement cases={len(payload.get('pass_cases_with_counter_changes', []))}; "
+        f"non-PASS counter-movement cases={len(payload.get('nonpass_cases_with_counter_changes', []))}; "
+        f"no-execution cases={len(payload.get('cases_with_no_execution_evidence', []))}; "
+        f"scope-warning cases={len(payload.get('cases_with_scope_warnings', []))}."
+    )
+    lines.append("- Use this report as evidence. Final missing-scenario/test-point conclusions require source review and target-scope checks.")
+    lines.append("")
+    lines.append("## Data")
+    lines.append("")
+    lines.append(f"- selected_case_count: {payload.get('selected_case_count')}")
+    lines.append(f"- gcno_count: {payload.get('gcno_count')}")
+    lines.append(f"- default_compare_file_count: {len(payload.get('default_compare_files', []))}")
+    lines.append(f"- reset_scope: `{payload.get('reset_scope')}`")
+    lines.append(f"- dry_run: `{payload.get('dry_run')}`")
+    lines.append("")
+    lines.append("## Limits / Next steps")
+    lines.append("")
+    lines.append("- Per-case counter movement is evidence, not final path proof.")
+    lines.append("- Use only PASS and in-scope counter movement as positive coverage leads; non-PASS movement is diagnostic-only.")
+    lines.append("- Inspect per-case `compare.md`, run logs, and Spike source before writing test-point cards.")
+    lines.append("- Use requirements or path markers when a same instruction/access flow must be proven.")
+    lines.append("")
+    lines.append("## Evidence")
     lines.append("")
     lines.append("## Inputs")
     lines.append("")

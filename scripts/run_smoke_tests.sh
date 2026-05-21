@@ -12,6 +12,14 @@ OUT_DIR="${SPIKE_COV_SKILL_SMOKE_OUT:-/tmp/spike_cov_skill_smoke}"
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
+require_report_sections() {
+  local report="$1"
+  grep -q "## Conclusion" "$report"
+  grep -q "## Data" "$report"
+  grep -q "## Evidence" "$report"
+  grep -q "## Limits / Next steps" "$report"
+}
+
 python3 scripts/validate_target.py targets/TEMPLATE.json
 python3 scripts/validate_target.py targets/memblock_non_h.json
 python3 -m py_compile scripts/*.py
@@ -24,10 +32,11 @@ python3 scripts/analyze_spike_gcov.py \
   --target targets/memblock_non_h.json \
   --top 3 \
   --json-out "$OUT_DIR/summary.json" \
-  --markdown > "$OUT_DIR/summary.md"
+  --markdown-out "$OUT_DIR/summary.md"
 grep -q "Ranked mixed entry/shared-review gaps" "$OUT_DIR/summary.md"
 grep -q "Class reason" "$OUT_DIR/summary.md"
 grep -q "low-call entries" "$OUT_DIR/summary.md"
+require_report_sections "$OUT_DIR/summary.md"
 
 cat > "$OUT_DIR/synthetic_target.json" <<'EOF'
 {
@@ -126,7 +135,7 @@ python3 scripts/analyze_spike_gcov.py \
   --target "$OUT_DIR/synthetic_target.json" \
   --focus XSError \
   --json-out "$OUT_DIR/synth_summary.json" \
-  --markdown > "$OUT_DIR/synth_summary.md"
+  --markdown-out "$OUT_DIR/synth_summary.md"
 grep -q "manual device path" "$OUT_DIR/synth_summary.md"
 grep -q "low-call entries" "$OUT_DIR/synth_summary.md"
 grep -q "manual/special-run synthetic gate" "$OUT_DIR/synth_summary.md"
@@ -137,14 +146,15 @@ python3 scripts/inspect_gcov_lines.py \
   --target "$OUT_DIR/synthetic_target.json" \
   --file mmu.cc.gcov \
   --json-out "$OUT_DIR/synth_line.json" \
-  --markdown > "$OUT_DIR/synth_line.md"
+  --markdown-out "$OUT_DIR/synth_line.md"
 grep -q "ordinals=branch-taken-0:2, call-never:0" "$OUT_DIR/synth_line.md"
+require_report_sections "$OUT_DIR/synth_line.md"
 python3 scripts/build_handoff_packet.py \
   --summary-json "$OUT_DIR/synth_summary.json" \
   --inspect-json "$OUT_DIR/synth_line.json" \
   --select nmi \
   --top 1 \
-  --markdown > "$OUT_DIR/synth_handoff.md"
+  --markdown-out "$OUT_DIR/synth_handoff.md"
 grep -q "dimension_gate" "$OUT_DIR/synth_handoff.md"
 grep -q "default_gate_eligible: no - target dimension is manual/special-run" "$OUT_DIR/synth_handoff.md"
 grep -q "low_call_entries" "$OUT_DIR/synth_handoff.md"
@@ -152,6 +162,7 @@ grep -q "same_flow_evidence" "$OUT_DIR/synth_handoff.md"
 grep -q "aggregate-only" "$OUT_DIR/synth_handoff.md"
 grep -q "basis: summary-low-branch-or-call" "$OUT_DIR/synth_handoff.md"
 grep -q "missing_entries" "$OUT_DIR/synth_handoff.md"
+require_report_sections "$OUT_DIR/synth_handoff.md"
 
 python3 scripts/inspect_gcov_lines.py \
   --gcov-dir "$GCOV_RAW" \
@@ -161,18 +172,20 @@ python3 scripts/inspect_gcov_lines.py \
   --context 2 \
   --max-functions 2 \
   --json-out "$OUT_DIR/line.json" \
-  --markdown > "$OUT_DIR/line.md"
+  --markdown-out "$OUT_DIR/line.md"
 grep -q "excluded by filters" "$OUT_DIR/line.md"
+require_report_sections "$OUT_DIR/line.md"
 
 python3 scripts/build_handoff_packet.py \
   --summary-json "$OUT_DIR/summary.json" \
   --inspect-json "$OUT_DIR/line.json" \
   --top 1 \
-  --markdown > "$OUT_DIR/handoff.md"
+  --markdown-out "$OUT_DIR/handoff.md"
 grep -q "line_evidence_status" "$OUT_DIR/handoff.md"
 grep -q "inspection-hint-weak" "$OUT_DIR/handoff.md"
 grep -q "profile_gate" "$OUT_DIR/handoff.md"
 grep -q "same_flow_evidence" "$OUT_DIR/handoff.md"
+require_report_sections "$OUT_DIR/handoff.md"
 python3 scripts/check_handoff_final.py --strict-handoff "$OUT_DIR/handoff.md"
 
 cat > "$OUT_DIR/bad_default_gate.md" <<'EOF'
@@ -243,8 +256,9 @@ python3 scripts/analyze_path_markers.py \
   --require mem.translate.tlb_miss_walk \
   --require mem.fault.page \
   --ordered \
-  --markdown > "$OUT_DIR/marker_strong.md"
+  --markdown-out "$OUT_DIR/marker_strong.md"
 grep -q "marker-sequence-observed" "$OUT_DIR/marker_strong.md"
+require_report_sections "$OUT_DIR/marker_strong.md"
 
 cat > "$OUT_DIR/marker_weak.jsonl" <<'EOF'
 {"markers":["mem.access.scalar_load","mem.translate.tlb_miss_walk","mem.fault.page"]}
@@ -255,9 +269,10 @@ python3 scripts/analyze_path_markers.py \
   --require mem.translate.tlb_miss_walk \
   --require mem.fault.page \
   --ordered \
-  --markdown > "$OUT_DIR/marker_weak.md"
+  --markdown-out "$OUT_DIR/marker_weak.md"
 grep -q "json-marker-sequence-observed-weak" "$OUT_DIR/marker_weak.md"
 grep -q "Weak JSON" "$OUT_DIR/marker_weak.md"
+require_report_sections "$OUT_DIR/marker_weak.md"
 cat > "$OUT_DIR/marker_grouped.jsonl" <<'EOF'
 {"access_id":"a1","seq":1,"markers":["mem.access.scalar_load"]}
 {"access_id":"a1","seq":2,"markers":["mem.translate.tlb_miss_walk"]}
@@ -270,9 +285,10 @@ python3 scripts/analyze_path_markers.py \
   --require mem.fault.page \
   --ordered \
   --group-by access_id \
-  --markdown > "$OUT_DIR/marker_grouped.md"
+  --markdown-out "$OUT_DIR/marker_grouped.md"
 grep -q "grouped-by-access_id-ordered-subsequence" "$OUT_DIR/marker_grouped.md"
 grep -q "marker-sequence-observed" "$OUT_DIR/marker_grouped.md"
+require_report_sections "$OUT_DIR/marker_grouped.md"
 
 mkdir -p "$OUT_DIR/cmp_before" "$OUT_DIR/cmp_after"
 cat > "$OUT_DIR/cmp_before/synth.gcov" <<'EOF'
@@ -294,14 +310,15 @@ python3 scripts/compare_gcov_snapshots.py \
   --after-dir "$OUT_DIR/cmp_after" \
   --file synth.gcov \
   --require-event synth.gcov:branch:10:0 \
-  --markdown \
-  --limit 20 > "$OUT_DIR/compare.md"
+  --markdown-out "$OUT_DIR/compare.md" \
+  --limit 20
 grep -q "key_mode: \`stable-line\`" "$OUT_DIR/compare.md"
 grep -q "decreased-or-reset" "$OUT_DIR/compare.md"
 grep -q "missing-after-event" "$OUT_DIR/compare.md"
 grep -q "counter formats" "$OUT_DIR/compare.md"
 grep -q "Required evidence points" "$OUT_DIR/compare.md"
 grep -q "all_required_passed: False" "$OUT_DIR/compare.md"
+require_report_sections "$OUT_DIR/compare.md"
 
 cat > "$OUT_DIR/cmp_before/percent.gcov" <<'EOF'
 function _Z7percentv called 1 returned 100% blocks executed 100%
@@ -317,10 +334,11 @@ python3 scripts/compare_gcov_snapshots.py \
   --before-dir "$OUT_DIR/cmp_before" \
   --after-dir "$OUT_DIR/cmp_after" \
   --file percent.gcov \
-  --markdown \
-  --limit 20 > "$OUT_DIR/compare_percent.md"
+  --markdown-out "$OUT_DIR/compare_percent.md" \
+  --limit 20
 grep -q "not-comparable-counter-format" "$OUT_DIR/compare_percent.md"
 grep -q "percent->percent" "$OUT_DIR/compare_percent.md"
+require_report_sections "$OUT_DIR/compare_percent.md"
 
 mkdir -p "$OUT_DIR/fake_hyptest/case_elf_asm/spike" "$OUT_DIR/fake_build"
 touch "$OUT_DIR/fake_hyptest/case_elf_asm/spike/ai_probe_a.ELF"
@@ -337,6 +355,7 @@ python3 scripts/run_case_coverage_matrix.py \
 grep -q "runner=PASS" "$OUT_DIR/case_matrix_fake.stdout"
 grep -q "Runner status" "$OUT_DIR/case_matrix_fake/summary.md"
 grep -q "ai_probe_a" "$OUT_DIR/case_matrix_fake/summary.md"
+require_report_sections "$OUT_DIR/case_matrix_fake/summary.md"
 python3 scripts/run_case_coverage_matrix.py \
   --hyptest-repo "$OUT_DIR/fake_hyptest" \
   --target targets/memblock_non_h.json \
@@ -349,6 +368,7 @@ python3 scripts/run_case_coverage_matrix.py \
 grep -q "dry_run=true" "$OUT_DIR/case_matrix_dry.stdout"
 grep -q "selected_case_count=1" "$OUT_DIR/case_matrix_dry.stdout"
 grep -q "Unresolved gcno hints" "$OUT_DIR/case_matrix_dry/summary.md"
+require_report_sections "$OUT_DIR/case_matrix_dry/summary.md"
 
 cat > "$OUT_DIR/fake_spike.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -367,5 +387,6 @@ HYPTEST_SPIKE_BIN="$OUT_DIR/fake_spike.sh" python3 scripts/run_case_coverage_mat
 grep -q "runner=PASS" "$OUT_DIR/case_matrix_default_runner.stdout"
 grep -q "ai_probe_b" "$OUT_DIR/case_matrix_default_runner/summary.md"
 grep -q "fake_spike --isa=" "$OUT_DIR/case_matrix_default_runner/cases/0001_ai_probe_b/run.log"
+require_report_sections "$OUT_DIR/case_matrix_default_runner/summary.md"
 
 echo "smoke tests ok: $OUT_DIR"

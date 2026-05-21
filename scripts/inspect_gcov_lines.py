@@ -10,6 +10,8 @@ source context. The agent then maps those code paths to test scenarios.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import re
 import subprocess
@@ -426,6 +428,43 @@ def print_markdown(
     priority_patterns: list[re.Pattern[str]],
     context_exclude_patterns: list[re.Pattern[str]],
 ) -> None:
+    total_uncovered = sum(report.uncovered_lines for report in reports)
+    total_branches = sum(report.never_branches for report in reports)
+    total_calls = sum(report.never_calls for report in reports)
+    total_excluded_functions = sum(report.excluded_counts.functions for report in reports)
+    total_excluded_events = sum(report.excluded_counts.events for report in reports)
+    print("# Spike gcov line evidence")
+    print()
+    print("## Conclusion")
+    print()
+    print(
+        f"- Inspected {len(reports)} `.gcov` file(s): uncovered lines={total_uncovered}, "
+        f"never/zero branches={total_branches}, never/zero calls={total_calls}."
+    )
+    print(
+        f"- Target filters excluded functions={total_excluded_functions}, events={total_excluded_events}; "
+        "filtered evidence can affect candidate completeness."
+    )
+    print("- Use the function/source evidence below to map coverage gaps to architecture scenarios; this report does not decide test intent by itself.")
+    print()
+    print("## Data")
+    print()
+    print("| File | Source | Uncovered lines | Never/zero branches | Never/zero calls | Excluded functions | Excluded events |")
+    print("|---|---|---:|---:|---:|---:|---:|")
+    for report in reports:
+        print(
+            f"| `{Path(report.gcov_file).name}` | `{report.source or '-'}` | {report.uncovered_lines} | "
+            f"{report.never_branches} | {report.never_calls} | {report.excluded_counts.functions} | {report.excluded_counts.events} |"
+        )
+    print()
+    print("## Limits / Next steps")
+    print()
+    print("- Line evidence identifies uncovered source/branch/call points, not the architecture scenario by itself.")
+    print("- Map the listed functions and source lines to a target path signature before writing tests.")
+    print("- If same-flow correlation matters, confirm with a single-case increment run or path markers.")
+    print()
+    print("## Evidence")
+    print()
     for report in reports:
         print(f"## {Path(report.gcov_file).name}")
         print()
@@ -494,6 +533,29 @@ def print_markdown(
                     print()
 
 
+def render_markdown(
+    reports: list[FileReport],
+    source_root: Path | None,
+    context: int,
+    max_functions: int,
+    max_events: int,
+    priority_patterns: list[re.Pattern[str]],
+    context_exclude_patterns: list[re.Pattern[str]],
+) -> str:
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        print_markdown(
+            reports,
+            source_root,
+            context,
+            max_functions,
+            max_events,
+            priority_patterns,
+            context_exclude_patterns,
+        )
+    return buf.getvalue()
+
+
 def expand_gcov_inputs(gcov_dir: Path | None, files: list[str]) -> list[Path]:
     result: list[Path] = []
     for item in files:
@@ -549,6 +611,7 @@ def main() -> int:
     )
     parser.add_argument("--json-out", type=Path, help="write JSON report to this path")
     parser.add_argument("--markdown", action="store_true", help="print markdown report")
+    parser.add_argument("--markdown-out", type=Path, help="write markdown report to this path")
     args = parser.parse_args()
 
     paths = expand_gcov_inputs(args.gcov_dir, args.file)
@@ -566,7 +629,22 @@ def main() -> int:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
         args.json_out.write_text(json.dumps([asdict(report) for report in reports], indent=2, ensure_ascii=False) + "\n")
 
-    if args.markdown or not args.json_out:
+    if args.markdown_out:
+        args.markdown_out.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown_out.write_text(
+            render_markdown(
+                reports,
+                args.source_root,
+                args.context,
+                args.max_functions,
+                args.max_events,
+                priority_patterns,
+                exclude_patterns,
+            ),
+            encoding="utf-8",
+        )
+
+    if args.markdown or (not args.json_out and not args.markdown_out):
         print_markdown(
             reports,
             args.source_root,

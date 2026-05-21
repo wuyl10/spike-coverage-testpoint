@@ -10,7 +10,9 @@ meaning or test-point value.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fnmatch
+import io
 import json
 import re
 from dataclasses import asdict, dataclass
@@ -706,12 +708,54 @@ def pct(value: float | None) -> str:
     return "-" if value is None else f"{value:.2f}%"
 
 
+def render_markdown(summary: dict, top: int, detail_limit: int) -> str:
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        print_markdown(summary, top, detail_limit)
+    return buf.getvalue()
+
+
 def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
     target = summary["target"]
     thresholds = target.get("coverage_thresholds", {})
     low_line_threshold = thresholds.get("low_line_pct", 20.0)
     low_branch_threshold = thresholds.get("low_branch_pct", 10.0)
     low_call_threshold = thresholds.get("low_call_pct", 10.0)
+    zero_count = len(summary.get("zero_entries", []))
+    low_line_count = len(summary.get("low_line_entries", []))
+    low_branch_count = len(summary.get("low_branch_entries", []))
+    low_call_count = len(summary.get("low_call_entries", []))
+    top_candidates = summary.get("candidates", [])[:3]
+    print("# Spike coverage summary evidence")
+    print()
+    print("## Conclusion")
+    print()
+    if top_candidates:
+        dims = ", ".join(f"`{candidate['dimension']}`" for candidate in top_candidates)
+        print(f"- Highest-priority coverage gaps are {dims}.")
+    else:
+        print("- No ranked coverage gaps matched the selected target/focus.")
+    print(
+        f"- Totals: 0% entries={zero_count}, low-line entries={low_line_count}, "
+        f"low-branch entries={low_branch_count}, low-call entries={low_call_count}."
+    )
+    print("- This report is coverage evidence only; the agent must still map gaps to architecture scenarios and test points.")
+    print()
+    print("## Data")
+    print()
+    print(f"- target: `{target['name']}`")
+    print(f"- dimensions: {len(summary.get('groups', []))}")
+    print(f"- ranked candidates: {len(summary.get('candidates', []))}")
+    print(f"- missing target dimensions: {len(summary.get('missing_entries_by_dimension', {}))}")
+    print()
+    print("## Limits / Next steps")
+    print()
+    print("- Aggregate gcov line/branch/call data does not prove same-flow path coverage.")
+    print("- Inspect top `.gcov` files and Spike source before proposing concrete tests.")
+    print("- Use single-case increment evidence or path markers before claiming a full execution path was covered.")
+    print()
+    print("## Evidence")
+    print()
     print("## Target")
     print()
     print(f"- name: `{target['name']}`")
@@ -851,6 +895,7 @@ def main() -> int:
     parser.add_argument("--detail-limit", type=int, default=40, help="number of detailed zero/low-branch entries to print")
     parser.add_argument("--json-out", type=Path, help="write machine-readable JSON summary to this path")
     parser.add_argument("--markdown", action="store_true", help="print markdown instead of JSON")
+    parser.add_argument("--markdown-out", type=Path, help="write markdown report to this path")
     args = parser.parse_args()
 
     target = load_target(args.target)
@@ -861,9 +906,13 @@ def main() -> int:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
         args.json_out.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
 
+    if args.markdown_out:
+        args.markdown_out.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown_out.write_text(render_markdown(result, args.top, args.detail_limit), encoding="utf-8")
+
     if args.markdown:
         print_markdown(result, args.top, args.detail_limit)
-    else:
+    elif not args.json_out and not args.markdown_out:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0
 
