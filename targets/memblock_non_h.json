@@ -539,6 +539,31 @@
     "Mark memtracer/log/device-specific paths as manual/special-run unless the default hyptest platform can observe them deterministically.",
     "Do duplicate search by semantic terms as well as mnemonics before proposing implementation."
   ],
+  "scenario_coverage": {
+    "purpose": "Find missing MemBlock non-H cross execution scenarios, not line/branch/call coverage numbers as goals.",
+    "scenario_axes": [
+      "instruction/access class: fetch, scalar load/store, FP memory, vector load/store, LR/SC, AMO/AMOCAS, CBO/CMO, fence/sfence",
+      "privilege/profile/gate: M/S/U, enabled ISA/profile feature, default vs manual/special-run gate",
+      "address/translation/protection/device condition: bare/stage1 translation, TLB hit/miss/walk/refill/flush, alignment/boundary, PMP/PMA/PBMT, MMIO/device/responder",
+      "exception/fault/trigger/cache/vector/atomic subcondition: misaligned/page/access fault priority, trigger timing, cache error/NMI, vector mask/vstart/fault-only-first/indexed/whole, LR/SC reservation, AMOCAS compare success/fail",
+      "architectural observable: register value, memory bytes, trap cause/tval, CSR state, vector element/mask result, deterministic device/manual-run evidence"
+    ],
+    "evidence_policy": [
+      "Line/branch/call/entry coverage is supporting evidence, not the test intent.",
+      "Do not claim a MemBlock cross scenario is covered unless same-flow evidence ties instruction/access, translation/protection condition, subcondition, and observable together.",
+      "Use shared-path evidence in mmu.cc/mmu.h/v_ext_macros.h/execute.cc/triggers.cc to turn entry gaps into scenario gaps.",
+      "Derive scenario signatures from target scope, Spike source, .gcov, single-case deltas, or path-marker records; do not generate a blind Cartesian product.",
+      "Manual-only dimensions such as memtracer/log/device injection/cache error/NMI remain manual/special-run unless deterministic default-gate observability is proven."
+    ],
+    "priority_scenarios": [
+      "stage1 translation with TLB/PTE cache state and visible trap or memory result",
+      "PMP/PMA/PBMT permission or memory-type decision on scalar/vector/atomic memory access",
+      "vector indexed/whole/mask/fault-only-first memory access with mask/vstart/progress observable",
+      "LR/SC and AMO/AMOCAS reservation/compare/failure paths with memory/register observable",
+      "trigger/debug timing on load/store/fetch with trap or CSR observable",
+      "MMIO/device/responder and cache-error/NMI paths when only manual/special-run evidence is possible"
+    ]
+  },
   "path_analysis": {
     "purpose": "MemBlock path-aware coverage model for deciding whether a full execution flow, not only individual gcov edges, has run.",
     "confidence_levels": [

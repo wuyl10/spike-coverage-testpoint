@@ -246,6 +246,47 @@ def same_flow_evidence_stub(candidate: dict[str, Any], evidence_status: str) -> 
     }
 
 
+def cross_scenario_signature_stub(
+    candidate: dict[str, Any],
+    target: dict[str, Any],
+    same_flow_evidence: dict[str, str],
+) -> dict[str, Any]:
+    scenario = target.get("scenario_coverage", {})
+    scenario_axes = []
+    if isinstance(scenario, dict) and isinstance(scenario.get("scenario_axes"), list):
+        scenario_axes = [str(item) for item in scenario["scenario_axes"]]
+    if not scenario_axes:
+        scenario_axes = [
+            "instruction/access class",
+            "privilege/profile/gate",
+            "address/translation/protection/device condition",
+            "exception/fault/trigger/cache/vector/atomic subcondition",
+            "architectural observable",
+        ]
+    gate = candidate.get("dimension_gate", {}) if isinstance(candidate.get("dimension_gate"), dict) else {}
+    return {
+        "target_scenario_axes": scenario_axes,
+        "instruction_or_access_class": needs_agent(
+            "derive from coverage dimension, representative entries, and inspected Spike source"
+        ),
+        "privilege_profile_or_gate": needs_agent(
+            "derive from target spec/profile and dimension gate"
+            + ("; current dimension is manual/special-run" if gate.get("manual_only") else "")
+        ),
+        "address_translation_protection_device_condition": needs_agent(
+            "derive only if source/gcov proves a translation/protection/address/device condition"
+        ),
+        "exception_trigger_cache_vector_atomic_condition": needs_agent(
+            "derive only if source/gcov proves an exception/trigger/cache/vector/atomic subcondition"
+        ),
+        "architectural_observable": needs_agent("register/memory/trap/CSR/vector/device observable"),
+        "evidence_status": same_flow_evidence.get("status", "none"),
+        "remaining_uncertainty": needs_agent(
+            "what is still not proven about this cross scenario or same-flow path"
+        ),
+    }
+
+
 def missing_inspection_files(inspect_reports: list[dict[str, Any]], inspection_files: list[str]) -> list[str]:
     if not inspection_files:
         return []
@@ -360,6 +401,7 @@ def build_packet(
     target = summary.get("target", {})
     handoff = target.get("handoff_defaults", {})
     path_analysis = target.get("path_analysis", {}) if isinstance(target.get("path_analysis"), dict) else {}
+    scenario_coverage = target.get("scenario_coverage", {}) if isinstance(target.get("scenario_coverage"), dict) else {}
     signature_fields = (
         path_analysis.get("path_signature_fields", [])
         if isinstance(path_analysis.get("path_signature_fields"), list)
@@ -394,7 +436,15 @@ def build_packet(
         same_flow_evidence = same_flow_evidence_stub(candidate, evidence_status)
         packet_candidates.append(
             {
-                "candidate_name": needs_agent(f"interpret {dimension} as an architecture-visible scenario"),
+                "candidate_name": needs_agent(f"interpret {dimension} as an architecture-visible cross scenario"),
+                "scenario_coverage_gap": needs_agent(
+                    "map coverage evidence to the missing architecture-visible cross execution scenario"
+                ),
+                "cross_scenario_signature": cross_scenario_signature_stub(candidate, target, same_flow_evidence),
+                "coverage_evidence_role": (
+                    "supporting evidence only; use counters/source/path data to locate a scenario gap, "
+                    "not as the test intent"
+                ),
                 "coverage_dimension": dimension,
                 "evidence_class": candidate.get("evidence_class", "unknown"),
                 "evidence_class_reason": candidate.get("evidence_class_reason", ""),
@@ -457,6 +507,8 @@ def build_packet(
         "target_name": target.get("name"),
         "target_title": target.get("title"),
         "target_scope_out": target.get("scope_out", []),
+        "scenario_coverage_available": bool(scenario_coverage),
+        "scenario_axes": scenario_coverage.get("scenario_axes", []) if isinstance(scenario_coverage, dict) else [],
         "path_analysis_available": bool(path_analysis),
         "handoff_rule": "This packet is not permission to write cases. Use hyptest-workflow only after the user asks to implement.",
         "selected_candidates": packet_candidates,
@@ -476,18 +528,21 @@ def print_markdown(packet: dict[str, Any]) -> None:
     print()
     print(f"- 已选择候选数: {len(candidates)}；可直接 default-gate 的候选数: {default_ready}。")
     print("- 该交接包用于给 hyptest-workflow 整理证据；用户未要求写 case 前，它不是写 case 授权。")
-    print("- 仍需 agent 解析源码/profile/observable 字段后，才能作为最终实现指导。")
+    print("- 仍需 agent 解析 cross 场景、源码/profile/observable 字段后，才能作为最终实现指导。")
     print()
     print("## 数据")
     print()
     print(f"- target_name: `{packet.get('target_name')}`")
+    print(f"- scenario_coverage_available: {packet.get('scenario_coverage_available')}")
+    if packet.get("scenario_axes"):
+        print("- scenario_axes: `" + "`, `".join(str(item) for item in packet["scenario_axes"]) + "`")
     print(f"- path_analysis_available: {packet.get('path_analysis_available')}")
     print(f"- scope_out_count: {len(packet.get('target_scope_out', []))}")
     print()
     print("## 限制与下一步")
     print()
     print("- 标记为 `needs source confirmation` 的字段不是最终测试点决策。")
-    print("- 使用 hyptest-workflow 实现 case 前，需要先解析 scope/profile/observable 字段。")
+    print("- 使用 hyptest-workflow 实现 case 前，需要先解析 scenario_coverage_gap、cross_scenario_signature、scope/profile/observable 字段。")
     print("- 如果 same-flow 证据只是 aggregate-only，需要单 case 增量或 path marker 确认。")
     print()
     print("## 证据")
@@ -502,6 +557,15 @@ def print_markdown(packet: dict[str, Any]) -> None:
         print(f"### 候选 {idx}: {candidate['coverage_dimension']}")
         print()
         print(f"- candidate_name: {candidate['candidate_name']}")
+        print(f"- scenario_coverage_gap: {candidate['scenario_coverage_gap']}")
+        if candidate.get("cross_scenario_signature"):
+            print("- cross_scenario_signature:")
+            for axis, value in candidate["cross_scenario_signature"].items():
+                if isinstance(value, list):
+                    print("  - " + str(axis) + ": `" + "`, `".join(str(item) for item in value) + "`")
+                else:
+                    print(f"  - {axis}: {value}")
+        print(f"- coverage_evidence_role: {candidate['coverage_evidence_role']}")
         print(f"- coverage_dimension: {candidate['coverage_dimension']}")
         print(f"- evidence_class: {candidate['evidence_class']}")
         if candidate.get("evidence_class_reason"):

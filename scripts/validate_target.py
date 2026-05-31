@@ -37,6 +37,7 @@ REQUIRED_TOP_LEVEL = {
 }
 
 OPTIONAL_TOP_LEVEL = {
+    "scenario_coverage",
     "path_analysis",
     "special_run_scope",
     "manual_only_dimensions",
@@ -262,11 +263,64 @@ def validate(path: Path) -> tuple[list[str], list[str]]:
     if not data.get("scope_out"):
         warnings.append("`scope_out` is empty; agent may over-propose out-of-scope tests")
 
+    scenario_coverage = data.get("scenario_coverage")
+    if scenario_coverage is not None:
+        validate_scenario_coverage(scenario_coverage, errors, warnings)
+
     path_analysis = data.get("path_analysis")
     if path_analysis is not None:
         validate_path_analysis(path_analysis, errors, warnings)
 
     return errors, warnings
+
+
+def validate_scenario_coverage(value: Any, errors: list[str], warnings: list[str]) -> None:
+    if not isinstance(value, dict):
+        errors.append("`scenario_coverage` must be an object when present")
+        return
+
+    discouraged = sorted({"combination_axes", "cartesian_product", "full_matrix"} & set(value))
+    if discouraged:
+        warnings.append(
+            "`scenario_coverage` should not define blind scenario matrices; discouraged fields: "
+            + ", ".join(discouraged)
+        )
+
+    allowed = {"purpose", "scenario_axes", "evidence_policy", "priority_scenarios"}
+    unknown = sorted(set(value) - allowed)
+    if unknown:
+        warnings.append("`scenario_coverage` has unknown fields: " + ", ".join(unknown))
+
+    if "purpose" in value and not isinstance(value.get("purpose"), str):
+        errors.append("`scenario_coverage.purpose` must be a string")
+    for key in ("scenario_axes", "evidence_policy", "priority_scenarios"):
+        if key in value and not is_str_list(value.get(key)):
+            errors.append(f"`scenario_coverage.{key}` must be a list of strings")
+
+    axes = value.get("scenario_axes", [])
+    if not axes:
+        warnings.append("`scenario_coverage.scenario_axes` is missing; final reports may drift back to counter-only gaps")
+    elif is_str_list(axes):
+        joined_axes = " ".join(axes).lower()
+        recommended_terms = {
+            "instruction/access": ("instruction", "access"),
+            "profile/gate": ("profile", "gate", "privilege"),
+            "condition": ("condition", "translation", "protection", "device", "exception"),
+            "observable": ("observable", "assert"),
+        }
+        for label, terms in recommended_terms.items():
+            if not any(term in joined_axes for term in terms):
+                warnings.append(f"`scenario_coverage.scenario_axes` may be missing {label} axis")
+
+    policy = value.get("evidence_policy", [])
+    if not policy:
+        warnings.append("`scenario_coverage.evidence_policy` is missing; agent may over-treat counters as goals")
+    elif is_str_list(policy):
+        joined_policy = " ".join(policy).lower()
+        if "cartesian" in joined_policy and "do not" not in joined_policy and "not" not in joined_policy:
+            warnings.append("`scenario_coverage.evidence_policy` mentions Cartesian products without a clear guardrail")
+        if not any(term in joined_policy for term in ("line", "branch", "call", "counter", "coverage")):
+            warnings.append("`scenario_coverage.evidence_policy` should state that coverage counters are supporting evidence")
 
 
 def validate_path_analysis(value: Any, errors: list[str], warnings: list[str]) -> None:

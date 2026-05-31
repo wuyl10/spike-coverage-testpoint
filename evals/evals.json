@@ -16,7 +16,9 @@
         "Validates or relies on a validated target file before analysis.",
         "Uses scripts only for coverage evidence extraction/ranking, then performs agent reasoning for test-point candidates.",
         "Uses target inspection_hints or source_priority to choose line-level gcov files for top candidates.",
-        "Ranks at least five candidates with coverage evidence and test observables in the final agent report.",
+        "Ranks at least five candidates as missing cross execution scenarios with supporting coverage evidence and test observables in the final agent report.",
+        "States that line/branch/call/entry counters are supporting evidence, not the coverage goal itself.",
+        "Includes a cross scenario signature for top candidates, not just file names or source lines.",
         "Labels path confidence instead of treating aggregate branch coverage as full path coverage.",
         "Does not write or modify hyptest cases.",
         "Includes a structured hyptest-workflow handoff packet for implementation.",
@@ -114,6 +116,7 @@
         "Asks for or proposes a target file before coverage analysis.",
         "Mentions required fields including spec, scope_in, scope_out, and dimensions.",
         "Mentions optional path_analysis as evidence policy/reporting checklist when the goal involves path-sensitive execution-flow coverage.",
+        "Mentions scenario_coverage as the target-owned checklist for cross execution scenario axes and evidence policy.",
         "Mentions validate_target.py as the check after creating or editing a target.",
         "Keeps scripts evidence-only and agent-owned semantic judgment."
       ]
@@ -126,6 +129,7 @@
       "assertions": [
         "Uses the structured hyptest-workflow handoff packet format.",
         "Includes implementation_owner: hyptest-workflow.",
+        "Includes scenario_coverage_gap, cross_scenario_signature, and coverage_evidence_role before raw coverage counters.",
         "Includes target_file, coverage evidence, expected observable, duplicate-search terms, and gate note.",
         "Includes path_confidence, path_signature, evidence_class, and profile_gate fields when target path_analysis is available.",
         "May use build_handoff_packet.py for the skeleton but does not treat skeleton TODOs as final analysis.",

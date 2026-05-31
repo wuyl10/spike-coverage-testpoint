@@ -1,17 +1,19 @@
 # Spike Coverage Testpoint Skill
 
-把 Spike 的 gcov 覆盖率缺口转成 hyptest 测试点规划。
+把 Spike 的 gcov/path/case-counter 证据转成“未覆盖 cross 执行场景”的 hyptest 测试点规划。
 
 核心分工：
 
-- 脚本负责快速找证据：哪些文件、函数、源码行、branch、call 没覆盖或覆盖少。
-- agent 负责做判断：这些缺口对应什么架构场景，是否值得补，怎么设计可自检测试点。
+- 脚本负责快速找证据：哪些文件、函数、源码行、branch、call、单 case 计数或 path marker 没覆盖或证据不足。
+- agent 负责做判断：这些证据对应哪个 architecture-visible cross 执行场景，是否值得补，怎么设计可自检测试点。
+
+核心目标不是提高行/代码/分支覆盖率数字本身，而是找出哪些 cross 执行场景没跑到。line/branch/call/entry 覆盖只作为定位证据；最终报告必须说清楚缺的场景、场景签名、可观测行为和 same-flow 置信度。
 
 ## 目录
 
 - `SKILL.md`: Codex skill 主说明。
 - `targets/`: 覆盖率分析目标配置。具体规格、范围和排除项放这里。
-- `scripts/analyze_spike_gcov.py`: 解析 `gcov -b -c` summary，按 target 维度排序覆盖缺口，并标出 `entry` / `shared-path` / `mixed` 证据类型。
+- `scripts/analyze_spike_gcov.py`: 解析 `gcov -b -c` summary，按 target 维度排序支撑证据缺口，并标出 `entry` / `shared-path` / `mixed` 证据类型。
 - `scripts/inspect_gcov_lines.py`: 精查 `.gcov`，提取 `#####`、未执行 branch/call、源码上下文，并报告被过滤掉的函数/事件数量。
 - `scripts/build_handoff_packet.py`: 根据 summary/line JSON 生成 hyptest-workflow 交接包骨架，包含 profile/gate 待确认字段。
 - `scripts/compare_gcov_snapshots.py`: 比较单 case 前后 `.gcov` 快照，报告函数上下文、计数增加、计数下降、counter 格式、before/after 缺失文件和缺失事件。
@@ -26,14 +28,14 @@
 
 ### 什么情况用
 
-当你想从 Spike 覆盖率反推“还应该补哪些 hyptest 测试点”时，用这个 skill。
+当你想从 Spike 覆盖率证据反推“哪些 cross 执行场景没覆盖、还应该补哪些 hyptest 测试点”时，用这个 skill。
 
 典型场景：
 
 - 看某次 Spike gcov 覆盖率哪里没跑到。
 - 只分析某个目标，比如 MemBlock、frontend、AMO、vector load/store。
-- 根据低 line/branch/call coverage 设计高质量测试点。
-- 判断某个执行场景/执行流是否真的跑过，而不是只看每个分支是否分别覆盖。
+- 根据低 line/branch/call counter 证据定位 cross 场景缺口，并设计高质量测试点。
+- 判断某个 cross 执行场景/执行流是否真的跑过，而不是只看每个分支是否分别覆盖。
 - 做单 case 增量覆盖确认，或设计 coverage Spike 的路径标记插桩。
 - 把覆盖率证据整理成交给 `hyptest-workflow` 的测试点计划。
 
@@ -64,7 +66,7 @@
 目标用 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/memblock_non_h.json。
 coverage summary 用 /nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/gcov_raw/gcov_memblock_non_h_summary.txt。
 只要测试点规划，不要写 case。
-重点看哪些 MemBlock 相关代码、函数、分支、call 没覆盖或覆盖少，并给出值得补的高质量 hyptest 测试点。
+重点看哪些 MemBlock cross 执行场景没有覆盖到；代码、函数、分支、call 只作为支撑证据，并给出值得补的高质量 hyptest 测试点。
 ```
 
 #### 2. 只看某一类缺口
@@ -72,7 +74,7 @@ coverage summary 用 /nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_d
 ```text
 用 spike-coverage-testpoint 看 MemBlock non-H 覆盖率里 vector whole/mask 和 vector indexed 的缺口。
 请读取 summary 和对应 .gcov，说明哪些 entry/branch/call 没覆盖，
-再判断应该补哪些测试点、observable 是什么、是否需要特殊 profile。
+再判断缺的是哪些 cross 执行场景、应该补哪些测试点、observable 是什么、是否需要特殊 profile。
 不要写 case。
 ```
 
@@ -96,7 +98,7 @@ coverage summary 用 /nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_d
 
 ```text
 根据刚才的 Spike 覆盖率候选，生成 hyptest-workflow 交接包。
-每个候选要包含 coverage evidence、source/gcov evidence、target_semantic、
+每个候选要包含 scenario_coverage_gap、cross_scenario_signature、coverage evidence、source/gcov evidence、target_semantic、
 expected observable、duplicate search terms、gate note。
 不要改任何 hyptest 文件。
 ```
@@ -184,9 +186,9 @@ ai_xxx、ai_yyy、ai_zzz。
 
 每个 `.md` 至少要有：
 
-- `结论`: 当前覆盖率结论，哪些地方最缺，哪些证据能/不能用。
+- `结论`: 当前覆盖率证据指向哪些 cross 执行场景缺口，哪些最值得补。
 - `数据`: target、输入路径、case 数、runner 状态、覆盖计数等数据。
-- `证据`: 具体 `.gcov`、函数、源码行、branch/call、case log、compare 文件。
+- `证据`: 具体 `.gcov`、函数、源码行、branch/call、case log、compare 文件，以及它们如何支持场景判断。
 - `限制与下一步`: 不能证明什么，下一步要 inspect、单 case 增量、path marker，还是交给 `hyptest-workflow`。
 
 面向人读的 Markdown 标题和解释文字统一使用中文；JSON key、稳定证据字段名、脚本状态枚举可以保留英文，方便后续脚本和 agent 继续识别。
@@ -235,10 +237,10 @@ cov_runs/<target>/<run_tag>/          原始证据，追溯时看
 
 | 你想知道 | 看哪个文件 | 这个文件回答什么 |
 |---|---|---|
-| 看总体覆盖率展示 | `summary.md` | 哪些维度低、哪些入口 0%、line/branch/call 覆盖率和优先级排名。 |
+| 看总体覆盖率展示 | `summary.md` | 哪些维度有 cross 场景证据缺口、哪些入口 0%、line/branch/call 支撑证据和优先级排名。 |
 | 看具体源码哪里没覆盖 | `line.md` | `mmu.cc/mmu.h/v_ext_macros.h/...` 里哪些函数、源码行、branch、call 没跑到。 |
 | 看具体指令入口有没有跑到 | `entry_line.md` | `riscv/insns/*.h.gcov` 的入口级行/分支/call 证据。 |
-| 看最后该补哪些测试点 | `testpoint_plan.md` | agent 综合证据后的测试场景、observable、gate 建议和下一步。 |
+| 看最后该补哪些测试点 | `testpoint_plan.md` | agent 综合证据后的 cross 执行场景缺口、observable、gate 建议和下一步。 |
 
 其他文件按需看：
 
@@ -248,7 +250,7 @@ cov_runs/<target>/<run_tag>/          原始证据，追溯时看
 - `*.json`: 给脚本和 agent 继续处理的结构化数据，不是主要人工阅读入口。
 
 一句话原则：`summary.md`、`line.md`、`entry_line.md` 是证据，`testpoint_plan.md`
-是结论和行动计划。aggregate coverage 只能说明边/计数分别覆盖过，不能证明同一条动态执行流；
+是 cross 场景结论和行动计划。aggregate coverage 只能说明边/计数分别覆盖过，不能证明同一条动态执行流；
 要证明 same-flow，看 `compare.md` 或 `path_markers.md`。
 
 逐 case 跑完后，优先看 `case_matrix*/summary.md` 总览；单个 case 再看
@@ -258,7 +260,7 @@ cov_runs/<target>/<run_tag>/          原始证据，追溯时看
 
 - `结论`: 现在最缺哪里，优先补什么。
 - `数据`: target、输入、case 数、line/branch/call/0% entry 等关键数字。
-- `证据`: `.gcov`、源码函数/行、branch/call、case log 或 compare/path marker。
+- `证据`: `.gcov`、源码函数/行、branch/call、case log 或 compare/path marker，以及它们支持的场景判断。
 - `限制与下一步`: 哪些只是 aggregate evidence，哪些需要单 case 增量、path marker 或 `hyptest-workflow` 查重落 case。
 
 ## 高级：手动跑脚本
@@ -480,6 +482,7 @@ bash scripts/run_smoke_tests.sh
 - `scope_in`
 - `scope_out`
 - `dimensions`
+- `scenario_coverage`：推荐填写。定义 cross 场景轴、证据策略和优先场景提示；它是报告 checklist，不是自动组合矩阵。
 - `path_analysis`：可选。证据策略、路径报告字段 checklist、路径置信度、单 case 增量规则、path marker 词表。它不是完整路径矩阵。
 - `inspection_hints`
 - `duplicate_search_terms`
@@ -488,7 +491,8 @@ bash scripts/run_smoke_tests.sh
 
 ## 注意
 
-- 覆盖率只是证据，不是测试意图。
+- 覆盖率只是证据，不是测试意图；最终目标是找 cross 执行场景覆盖缺口。
+- 不要输出“补一条覆盖 line N 的 case”作为最终测试点；要说清楚 instruction/access、profile/gate、地址/翻译/保护/设备条件、异常/trigger/cache/vector/atomic 子条件和 observable。
 - `insns/*.h` 入口覆盖只能说明指令入口有没有跑到，语义仍要结合共享路径源码判断。
 - branch/call 覆盖是聚合边计数，不等于完整路径覆盖；同一条执行流需要单 case 增量证据或 path marker 证据。
 - `single-case-increment-confirmed` 要求：单 case 隔离、目标 PC/指令证据、所有 must-pass counters 增加，branch/call 使用 numeric count 快照，并且没有 missing/decreased/not-comparable 事件；否则降级为 `counter-increment-observed` 或 `edge-covered-path-unknown`。

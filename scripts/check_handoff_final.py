@@ -49,14 +49,20 @@ DEFAULT_GATE_YES_RE = re.compile(
 
 GENERIC_NEEDS_SOURCE_RE = re.compile(
     r"needs source confirmation:\s*(map uncovered code to an architecture-visible scenario|"
+    r"map coverage evidence to the missing architecture-visible cross execution scenario|"
     r"register/memory/trap/CSR/vector observable|"
+    r"register/memory/trap/CSR/vector/device observable|"
     r"choose one after evidence review|"
     r"derive this field from source/gcov/path-marker evidence|"
+    r"derive from coverage dimension, representative entries, and inspected Spike source|"
+    r"derive from target spec/profile and dimension gate.*|"
+    r"derive only if source/gcov proves .+|"
     r"list must-pass line/branch/call/path-marker evidence and current status|"
     r"in-scope \| out-of-scope \| needs target decision|"
     r"infer required ISA/profile feature from source and representative entries|"
     r"yes/no/unknown after confirming feature availability and deterministic observable|"
-    r"interpret .+ as an architecture-visible scenario)",
+    r"what is still not proven about this cross scenario or same-flow path|"
+    r"interpret .+ as an architecture-visible (cross )?scenario)",
     re.IGNORECASE,
 )
 
@@ -75,6 +81,9 @@ def strict_handoff_check(path: Path, final_report: bool = False) -> list[str]:
     findings: list[str] = []
     text = path.read_text(errors="replace")
     required_terms = [
+        "scenario_coverage_gap",
+        "cross_scenario_signature",
+        "coverage_evidence_role",
         "evidence_class",
         "line_evidence_status",
         "path_confidence",

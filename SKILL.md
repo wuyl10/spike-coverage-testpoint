@@ -1,18 +1,41 @@
 ---
 name: spike-coverage-testpoint
-description: Analyze official/community Spike coverage from gcov/gcovr/.gcov/.gcda/.gcno/coverage HTML and convert low or zero coverage into evidence-backed, high-quality hyptest test-point plans. Must use whenever the user asks to inspect Spike coverage, coverage gaps, low line/branch/call coverage, path-sensitive MemBlock coverage, single-case incremental coverage, path-marker instrumentation, or what riscv-hyp-tests/hyptest tests should be added from Spike coverage. Always use a target file under targets/*.json, or create one from targets/TEMPLATE.json, so concrete scope/spec/exclusions/path evidence policy stay outside the skill body. The bundled scripts only extract and rank coverage evidence; the agent must judge what architecture scenario/path the uncovered code represents, whether it is worth testing, and how to design the test point. If the user wants to add or modify ai_test_cases/manual_test_cases/test_point/test_register.c, also use hyptest-workflow for implementation.
+description: Analyze official/community Spike coverage evidence from gcov/gcovr/.gcov/.gcda/.gcno/coverage HTML to find missing architecture-visible cross execution scenarios, then convert those gaps into evidence-backed hyptest test-point plans. Must use whenever the user asks to inspect Spike coverage gaps, scenario/cross/path coverage, low line/branch/call counters as evidence, path-sensitive MemBlock coverage, single-case incremental coverage, path-marker instrumentation, or what riscv-hyp-tests/hyptest tests should be added from Spike coverage. Always use a target file under targets/*.json, or create one from targets/TEMPLATE.json, so concrete scope/spec/exclusions/scenario axes/path evidence policy stay outside the skill body. The bundled scripts only extract and rank counter/source/path evidence; the agent must judge which cross execution scenario is missing, whether it is worth testing, and how to design the test point. If the user wants to add or modify ai_test_cases/manual_test_cases/test_point/test_register.c, also use hyptest-workflow for implementation.
 ---
 
 # Spike Coverage Testpoint
 
-这个技能把 Spike 覆盖率从“数字”翻译成“该补哪些高质量测试点”。它也支持 path-aware 分析：区分单个 branch/call 有没有覆盖、一个单 case 是否让必经计数增加、以及一条完整执行流是否需要 path marker 才能确认。默认输出测试点规划，不直接写 hyptest case；当用户明确要求落 case、改 `test_point/**/*.md` 或改 `test_register.c` 时，继续使用 `$hyptest-workflow`。
+这个技能把 Spike 覆盖率证据从“数字”翻译成“哪些架构可见 cross 执行场景还没有覆盖，以及该补哪些高质量测试点”。它也支持 path-aware 分析：区分单个 branch/call 有没有覆盖、一个单 case 是否让必经计数增加、以及一条完整执行流是否需要 path marker 才能确认。默认输出测试点规划，不直接写 hyptest case；当用户明确要求落 case、改 `test_point/**/*.md` 或改 `test_register.c` 时，继续使用 `$hyptest-workflow`。
 
 核心边界，任何任务都按这个执行：
 
 ```text
-脚本负责：快速找哪里没覆盖、哪些函数/行/分支/call 没跑到；对单 case 前后 .gcov 快照做计数增量对比；解析可选 path-marker 日志。
-agent负责：判断这些没覆盖代码对应什么架构场景/执行流，值不值得补，怎么设计测试点，以及当前证据能否证明同一条路径真的跑过。
+脚本负责：快速找哪些 counter/source/path 证据缺失，包括函数/行/分支/call、单 case 前后 .gcov 计数增量、可选 path-marker 日志。
+agent负责：把证据映射成未覆盖的 cross 执行场景/路径签名，判断值不值得补，怎么设计测试点，以及当前证据能否证明同一条动态路径真的跑过。
 ```
+
+## Scenario/Cross Coverage First
+
+本技能的核心目的不是追求行覆盖、代码覆盖、分支覆盖或调用覆盖数字，而是找出 **哪些架构可见 cross 执行场景没有覆盖到**。gcov 的 line/branch/call 只是一层证据，用来定位可能缺失的场景；最终测试点必须回到场景、条件组合和可观测行为。
+
+这里的 cross 执行场景通常包含这些轴的一个有意义组合：
+
+- instruction/access class：fetch、scalar load/store、FP memory、vector load/store、LR/SC、AMO/AMOCAS、CBO/CMO、fence/sfence 等。
+- privilege/profile/gate：M/S/U、ISA/profile 是否启用、默认 gate 还是 manual/special-run。
+- address/translation/protection/device condition：bare/stage1、TLB hit/miss/walk、边界/对齐、PMP/PMA/PBMT、MMIO/device/responder。
+- exception/fault/trigger/cache/vector/atomic subcondition：page/access/misaligned fault、trigger timing、cache/NMI、mask/vstart/fault-only-first/indexed/whole、reservation/CAS 成败等。
+- architectural observable：寄存器、内存、trap cause/tval、CSR、vector element、device side effect 或确定的 pass/fail 行为。
+
+每个最终候选都必须回答：
+
+```text
+Scenario coverage gap: 缺的是哪个 cross 执行场景，而不是“哪一行没覆盖”
+Cross scenario signature: 这个场景的关键轴和值，哪些来自源码/gcov/path-marker 证据，哪些仍不确定
+Coverage evidence role: line/branch/call/entry/case counter 只是 supporting evidence
+Same-flow confidence: 证据是否证明这些条件发生在同一条动态指令/访问路径里
+```
+
+不要从 target 里的轴盲目枚举笛卡尔积。只从 target scope、Spike 源码、`.gcov`、单 case 增量或 path-marker 记录反推有证据支撑的 cross 场景；证据不足时标 `edge-covered-path-unknown`、`needs-path-instrumentation` 或 `needs source confirmation`。
 
 ## Target Files First
 
@@ -29,6 +52,7 @@ target 文件负责：
 - `line_exclude_regex`: `.gcov` 行级证据过滤。
 - `coverage_thresholds`: 可选。summary 低覆盖阈值，默认 line<20%、branch<10%、call<10%；不同目标需要不同阈值时只改 target。
 - `dimensions`: 脚本分组用的覆盖维度。
+- `scenario_coverage`: 可选。目标级 cross 场景覆盖说明，包括场景轴、证据策略和优先场景提示。它是 checklist，不是完整组合矩阵。
 - `path_analysis`: 可选。路径敏感分析用的证据策略、报告字段 checklist、置信度、单 case 增量规则、path marker 词表。它不是完整路径矩阵，不允许 agent 从这里脑补组合。
 - `special_run_scope` / `manual_only_dimensions` / `dimension_metadata`: target 级 gate 约束。脚本会把它们带到 candidate/handoff；agent 不得把 manual-only 维度推荐成 default gate。
 - `analysis_notes` / `duplicate_search_terms`: agent 做场景解释和查重时使用的目标专用信息。
@@ -40,10 +64,10 @@ target 文件负责：
 Use this skill for:
 
 - 分析 official/community Spike 覆盖率、`gcov`、`gcovr`、`.gcov/.gcda/.gcno`、coverage HTML。
-- 根据低覆盖/0 覆盖找应该补的 hyptest 测试点。
+- 根据低覆盖/0 覆盖证据找未覆盖的 cross 执行场景和应该补的 hyptest 测试点。
 - 用户指定某个目标，比如 MemBlock、访存、vector load/store、atomic、trigger、exception、MMIO、TLB/page table、某个扩展或某组 Spike 文件。
 - 用户要求“只看某类覆盖率”“排除某扩展/某模式”“根据覆盖率补测试点”。
-- 用户要求判断“某个执行场景/执行流有没有跑过”“所有分支分别覆盖但同一条指令流可能没覆盖”“单 case 增量覆盖确认”“路径标记插桩”。
+- 用户要求判断“某个 cross 执行场景/执行流有没有跑过”“所有分支分别覆盖但同一条指令流可能没覆盖”“单 case 增量覆盖确认”“路径标记插桩”。
 
 Do not use this skill for pure hyptest failure triage; use `$hyptest-failure-triage` for FAILED/timeout/stuck/mismatch logs. Do not use this skill alone to implement cases; pair it with `$hyptest-workflow`.
 
@@ -54,7 +78,7 @@ Every coverage task must leave a Markdown artifact on disk, not only terminal te
 Every Markdown report must include these sections near the top:
 
 ```text
-结论：当前覆盖率情况说明了什么
+结论：当前覆盖率证据指向哪些 cross 执行场景缺口
 数据：target、输入路径、case 数、覆盖计数、runner 状态等
 证据：具体文件/函数/源码行/branch/call/case log/compare 文件
 限制与下一步：当前证据不能证明什么，下一步要 inspect、单 case 增量还是 path marker
@@ -115,12 +139,14 @@ example `20260521_current`, `20260521_all_cases`,
 analysis outputs inside the skill directory; the skill directory is tool source,
 not a result store.
 
-The deliverable is a ranked set of **coverage-backed test-point cards**. Each card should answer:
+The deliverable is a ranked set of **scenario-coverage-backed test-point cards**. Each card should answer:
 
 ```text
-Coverage evidence: which file/dimension is low, with line/branch/call evidence
+Scenario coverage gap: which architecture-visible cross execution scenario is missing
+Cross scenario signature: instruction/access + profile/gate + address/translation/protection/device + exception/trigger/cache/vector/atomic subcondition + observable, with unknowns marked
+Coverage evidence role: supporting evidence only; which file/dimension/counter suggests the gap
+Coverage evidence: which file/dimension is low, with entry/line/branch/call evidence
 Path evidence: confirmed-not-executed | counter-increment-observed | single-case-increment-confirmed | edge-covered-path-unknown | needs-path-instrumentation | out-of-scope
-Missing scenario: the architectural behavior missing from tests
 Why high value: why it should improve Spike coverage and RTL confidence
 Test idea: concrete setup/action
 Observable: register/memory/trap/CSR/vector result to assert
@@ -151,8 +177,8 @@ Use these rules whenever the user cares about execution paths, combinations, or 
   - branch/call snapshots use numeric count format, not percentage-only format;
   - no required `decreased-or-reset`, `missing-after-event`, `not-comparable-counter-format`, unresolved `missing-before-event`, `missing-before-file`, or `missing-after-file`.
   If any item is missing, downgrade to `counter-increment-observed` or `edge-covered-path-unknown`.
-- For path-sensitive work, build a **path signature from source/gcov evidence** before proposing a case. Use `path_analysis.path_signature_fields` only as a reporting checklist; do not treat it as a complete architecture matrix.
-- Apply `path_analysis.evidence_policy` and `path_analysis.path_markers` from the selected target when present. Do not invent path combinations from target JSON; derive them from Spike source, `.gcov`, single-case deltas, or path-marker records.
+- For path-sensitive or cross-scenario work, build a **scenario/path signature from source/gcov evidence** before proposing a case. Use `scenario_coverage.scenario_axes` and `path_analysis.path_signature_fields` only as reporting checklists; do not treat them as a complete architecture matrix.
+- Apply `scenario_coverage.evidence_policy`, `path_analysis.evidence_policy`, and `path_analysis.path_markers` from the selected target when present. Do not invent path combinations from target JSON; derive them from Spike source, `.gcov`, single-case deltas, or path-marker records.
 - Prefer tiny single-purpose cases for increment confirmation. If one case contains loops or many similar memory instructions, mark confidence lower because counter deltas may come from different dynamic instructions.
 - Path-marker instrumentation is for coverage Spike only. Keep it gated by a build flag, runtime option, or environment variable, and do not require it for normal Spike or default hyptest gates.
 - Treat `marker-sequence-observed` from JSONL path markers as marker evidence, not as final architecture proof by itself. Strong marker records need pc+insn, seq, or access_id correlation fields. Validate marker placement, per-instruction/access correlation, and expected observable before upgrading path confidence. Treat `json-marker-sequence-observed-weak` and `text-marker-sequence-observed-weak` as weak evidence only.
@@ -163,16 +189,16 @@ Keep this boundary strict:
 
 | Role | Responsibility |
 |---|---|
-| Target file | Defines spec assumptions, scope, exclusions, dimensions, and target-specific guidance. |
-| Scripts | Quickly find where coverage is missing: files, dimensions, functions, source lines, branches, calls, 0% entries, low branch/call coverage; compare single-case gcov snapshots; parse optional path-marker logs. |
-| Agent | Decide what the uncovered code means architecturally, whether it is a full path or only an edge, whether it is worth testing/in scope, whether it needs special run flags or instrumentation, and how to design a self-checkable test point. |
+| Target file | Defines spec assumptions, scope, exclusions, dimensions, scenario axes, and target-specific guidance. |
+| Scripts | Quickly find supporting evidence: files, dimensions, functions, source lines, branches, calls, 0% entries, low branch/call coverage; compare single-case gcov snapshots; parse optional path-marker logs. |
+| Agent | Decide which cross execution scenario the evidence implies, whether it is a full path or only an edge, whether it is worth testing/in scope, whether it needs special run flags or instrumentation, and how to design a self-checkable test point. |
 | hyptest-workflow | Only when implementation is requested: duplicate check, profile/gate decision, write test_point/case, register, compile, run. |
 
 Do not let script output become the final answer by itself. Script output is evidence. The final test-point recommendation must come from target reading, source/gcov review, and architecture reasoning.
 
 ## Ground Rules
 
-- Treat coverage as evidence, not as the test intent. A 0% file suggests a missing entry, but a high-quality test point must still have an architectural observable: register/memory result, trap cause/tval, privilege/CSR state, vector result, or deterministic pass/fail behavior.
+- Treat coverage as evidence, not as the test intent. A 0% file suggests a missing entry, but a high-quality test point must still name a cross execution scenario and an architectural observable: register/memory result, trap cause/tval, privilege/CSR state, vector result, or deterministic pass/fail behavior.
 - Respect the selected target exactly. If an uncovered path matches `scope_out`, mark it out of scope instead of proposing a test. If the target does not say whether a path is in scope, mark it `needs target decision`.
 - Do not edit `~/.bashrc`. If rerunning hyptest with a coverage Spike, use temporary environment variables in the command/process only.
 - When a proposed point requires special Spike runtime options, label it `manual/special-run` instead of pretending it is a normal default gate.
@@ -248,7 +274,7 @@ If the user provides different paths, use those.
 
 6. **For path-sensitive questions, build and verify a path signature**
    - Read `path_analysis` from the target when present.
-   - List a path signature from evidence, using `path_signature_fields` only as a checklist:
+   - List a scenario/path signature from evidence, using `scenario_coverage.scenario_axes` and `path_signature_fields` only as checklists:
      - target instruction/entry
      - shared source function path
      - required line/branch/call events
@@ -268,7 +294,7 @@ If the user provides different paths, use those.
    - If the task will implement cases, stop treating this skill as the owner and hand the selected cards to `$hyptest-workflow` for repo-level duplicate checks, quality gates, case writing, compile/run, and registration.
 
 8. **Output an actionable plan**
-   - Give evidence first: target, file/coverage/line/branch/call and exact gap.
+   - Lead with the scenario gap: target, missing cross scenario signature, and exact supporting file/coverage/line/branch/call evidence.
    - Save the final agent-authored analysis as Markdown when the task asks for an analysis result beyond raw script evidence. Use a clear path such as `<out_dir>/testpoint_plan.md`, `<out_dir>/final_report.md`, or the user-provided path.
    - Include path confidence and explain whether the evidence is an entry, edge, single-case increment, or marker-sequence proof.
    - Include `line_evidence_status` and do not finalize candidates marked `weak-inspection-hint-only`, `no-line-evidence-from-requested-files`, or `unreviewed-missing-files` without more source/gcov review.
@@ -282,173 +308,20 @@ If the user provides different paths, use those.
 
 ## Bundled Tools
 
-Use `analyze_spike_gcov.py` for the first pass when a gcov summary is available:
+Use scripts by purpose; detailed examples and reproduction commands live in `README.md`.
 
-```bash
-REPORT_DIR=/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/reports/<target_name>/<run_tag>
-RUN_DIR=/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_runs/<target_name>/<run_tag>
-mkdir -p "$REPORT_DIR" "$RUN_DIR"
+| Need | Tool | Required output habit |
+|---|---|---|
+| Validate or create target | `scripts/validate_target.py <target.json>` | Run after every target edit; fix errors before analysis. |
+| First-pass summary from gcov text | `scripts/analyze_spike_gcov.py --summary ... --target ...` | Save `summary.json` and `summary.md`; treat ranking as evidence only. |
+| Source/gcov miss inspection | `scripts/inspect_gcov_lines.py --gcov-dir ... --target ... --file ...` | Save `line.json` and `line.md`; translate misses to scenarios in agent analysis. |
+| Handoff skeleton | `scripts/build_handoff_packet.py --summary-json ... --inspect-json ...` | Fill `scenario_coverage_gap`, `cross_scenario_signature`, `target_semantic`, `expected_observable`, `profile_gate`, and `gate_note`; skeleton fields are not final. |
+| Single-case counter delta | `scripts/compare_gcov_snapshots.py --before-dir ... --after-dir ...` | Use numeric branch/call counts and must-pass requirements; downgrade if evidence is incomplete. |
+| Sequential per-case matrix | `scripts/run_case_coverage_matrix.py` | Run sequentially because `.gcda` counters are shared; treat counter movement as evidence, not proof of a scenario. |
+| Path marker logs | `scripts/analyze_path_markers.py --log ... --require ...` | Strong records need pc+insn, seq, or access_id; marker sequence is evidence, not final proof. |
+| Hygiene check | `scripts/check_handoff_final.py --strict-handoff/--strict-final-report ...` | Use before final handoff/report to catch raw skeleton fields and unsupported default gates. |
 
-python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/analyze_spike_gcov.py \
-  --summary /path/to/gcov_summary.txt \
-  --target /path/to/target.json \
-  --top 12 \
-  --json-out "$RUN_DIR/summary.json" \
-  --markdown-out "$REPORT_DIR/summary.md"
-```
-
-Useful options:
-
-```text
---focus vector        Only rank dimensions/entries containing "vector"
---focus amocas        Only rank dimensions/entries containing "amocas"
---top 20             Show more evidence rows
---json-out path       Save machine-readable summary for later comparison
---markdown-out path   Save Markdown report with conclusion/data/evidence
-```
-
-The script is an aid, not a substitute for source review. Use it to identify dimensions and 0% entries, then inspect source/gcov around the highest-value gaps.
-
-Use `validate_target.py` after editing a target:
-
-```bash
-python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/validate_target.py \
-  /path/to/target.json
-```
-
-Use `inspect_gcov_lines.py` for line-level source/branch/call evidence:
-
-```bash
-python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/inspect_gcov_lines.py \
-  --gcov-dir /path/to/gcov_raw \
-  --source-root /path/to/spike/source \
-  --target /path/to/target.json \
-  --file mmu.cc.gcov \
-  --file v_ext_macros.h.gcov \
-  --context 6 \
-  --max-functions 10 \
-  --json-out "$RUN_DIR/lines.json" \
-  --markdown-out "$REPORT_DIR/lines.md"
-```
-
-Optional evidence-only filtering can be added with repeated `--exclude-regex`, but prefer target-file filters for stable scope:
-
-```text
---exclude-regex '<regex>'
-```
-
-This script extracts:
-
-- uncovered source lines (`#####`)
-- never-executed branches
-- never-executed calls
-- enclosing gcov function block
-- source context around the first miss in each function
-
-Use its output as evidence. The agent then translates important misses into architecture-visible scenarios and marks low-value defensive, special-run, or out-of-scope paths.
-
-Use `build_handoff_packet.py` after summary and line-level JSON are available:
-
-```bash
-python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/build_handoff_packet.py \
-  --summary-json /path/to/summary.json \
-  --inspect-json /path/to/inspect.json \
-  --top 5 \
-  --markdown-out "$REPORT_DIR/handoff.md"
-```
-
-This only builds a packet skeleton. The agent must fill `target_semantic`, `scope_status`, `expected_observable`, `profile_gate`, and final `gate_note` from source review and architecture reasoning.
-If the packet lists `missing_inspection_files`, inspect those `.gcov` files before treating the candidate as fully reviewed, or mark the candidate `needs source confirmation`.
-
-Use `compare_gcov_snapshots.py` for single-case incremental coverage confirmation:
-
-```bash
-python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/compare_gcov_snapshots.py \
-  --before-dir /path/to/before_gcov \
-  --after-dir /path/to/after_gcov \
-  --target /path/to/target.json \
-  --file mmu.cc.gcov \
-  --file mmu.h.gcov \
-  --file v_ext_macros.h.gcov \
-  --markdown-out "$REPORT_DIR/compare.md"
-```
-
-Interpretation:
-
-- `newly-covered` or `increased` on all must-pass points supports `counter-increment-observed` first.
-- Upgrade to `single-case-increment-confirmed` only if the run is tiny/single-purpose, target PC/instruction evidence exists, and no required event/file is missing or decreased.
-- `still-zero` on any must-pass point means `confirmed-not-executed`.
-- `not-comparable-counter-format` means a branch/call event was only available as a percentage/unknown format. Regenerate snapshots with numeric counts such as `gcov -b -c` before using it for increment proof.
-- `decreased-or-reset`, `missing-after-event`, `not-comparable-counter-format`, unresolved `missing-before-event`, `missing-before-file`, or `missing-after-file` are invalid for positive path confirmation until explained.
-- `possible_key_drift` means before/after matching may be unstable; inspect the affected source line/function before deciding.
-- Aggregate counters without a controlled single-case run mean `edge-covered-path-unknown`.
-
-When the user asks how to run or interpret a single-case increment check, read
-`references/single_case_increment.md`.
-
-Use `run_case_coverage_matrix.py` when the user wants one-click all-case or selected-case sequential runs with a final report:
-
-```bash
-HYPTEST_SPIKE_BIN=/path/to/build-cov/spike \
-python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/run_case_coverage_matrix.py \
-  --hyptest-repo /path/to/riscv-hyp-tests-nhv5.1 \
-  --target /path/to/targets/memblock_non_h.json \
-  --build-dir /path/to/offical-spike-coverage/build-cov \
-  --elf-dir /path/to/riscv-hyp-tests-nhv5.1/case_elf_asm/spike \
-  --all-elves \
-  --limit 20 \
-  --gcno-from-target \
-  --out-dir "$RUN_DIR/case_matrix"
-```
-
-Useful selectors:
-
-```text
---case ai_name        Select one case; repeatable
---case-list file      Read case names or ELF paths
---elf file.ELF        Run an explicit ELF
---all-elves           Run mapped ELFs under --elf-dir
---case-regex REGEX    Filter selected case names before --limit
---limit N             Only run the first N selected cases
---dimension vector    Restrict --gcno-from-target to matching target dimensions
---dry-run             Show selected cases/gcno files without running Spike
-```
-
-`--command-template` supports `{spike_bin}`, `{elf}`, `{elf_name}`, `{elf_dir}`, `{case_name}`, `{run_name}`, and `{case_dir}`. The default template directly executes `{spike_bin}` instead of `bash -lc`, so shell startup files cannot override the temporary coverage Spike setting. For path-sensitive confirmation, prefer a template that saves Spike logs under `{case_dir}` so the agent can inspect guest PC/instruction evidence.
-
-The matrix output is evidence only:
-
-- `summary.md` / `summary.json`: final per-case matrix.
-- `cases/<idx>_<case>/run.log`: Spike output.
-- `before_gcov` / `after_gcov`: isolated snapshots for that case.
-- `compare.md` / `compare.json`: counter movement and requirements result.
-
-Interpret `cases_with_counter_changes` as “this case moved some selected counters”, not as proof of a high-quality path. Upgrade to a path-confidence claim only after source review, target scope review, and must-pass requirement checks. If `cases_with_invalid_evidence` is nonempty, inspect the per-case compare before using it.
-
-Use `analyze_path_markers.py` when a coverage Spike has emitted path-marker JSONL/text logs:
-
-```bash
-python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/analyze_path_markers.py \
-  --log /tmp/spike_mem_path_cov.jsonl \
-  --require mem.access.scalar_load \
-  --require mem.translate.tlb_miss_walk \
-  --require mem.fault.page \
-  --ordered \
-  --markdown-out "$REPORT_DIR/path_markers.md"
-```
-
-Preferred marker log format:
-
-```json
-{"pc":"0x80001000","insn":"lw","markers":["mem.access.scalar_load","mem.translate.tlb_miss_walk","mem.fault.page"]}
-```
-
-Only JSON marker records that preserve per-instruction/access correlation can support same-flow path evidence. Strong records should include pc+insn, seq, or access_id. JSON records without correlation fields and plain text fallback are weaker and should be treated as edge evidence unless independently proven to be one dynamic instruction/access record. The script status `marker-sequence-observed` means the marker sequence appeared; the agent still must validate marker placement and observable behavior.
-
-When the user asks to design or review path-marker instrumentation, read
-`references/path_marker_instrumentation.md`. Keep target-specific marker names
-in the target file; use the reference only for the generic instrumentation
-shape, JSONL format, and interpretation rules.
+When a task asks how to run or interpret single-case increments, read `references/single_case_increment.md`. When designing or reviewing marker instrumentation, read `references/path_marker_instrumentation.md`. Keep target-specific marker names and scenario axes in the target file.
 
 ## Report Format
 
@@ -463,12 +336,12 @@ Use this structure by default:
 - target scope:
 - target exclusions:
 
-## 高优先级测试点候选
-| Rank | Coverage evidence | Path confidence | Missing scenario/path signature | Test idea | Observable/assertion | Hyptest location | Gate note |
+## 高优先级 cross 场景缺口
+| Rank | Scenario coverage gap | Cross scenario signature | Supporting coverage evidence | Path confidence | Test idea | Observable/assertion | Hyptest location | Gate note |
 |---:|---|---|---|---|---|---|---|
 
 ## 行级证据
-| Candidate | Source/gcov evidence | Interpreted missing path |
+| Candidate | Source/gcov evidence | Interpreted missing scenario/path |
 |---|---|---|
 
 ## 次级缺口
@@ -485,6 +358,16 @@ target_file:
 target_name:
 selected_candidates:
   - candidate_name:
+    scenario_coverage_gap:
+    cross_scenario_signature:
+      instruction_or_access_class:
+      privilege_profile_or_gate:
+      address_translation_protection_device_condition:
+      exception_trigger_cache_vector_atomic_condition:
+      architectural_observable:
+      evidence_status:
+      remaining_uncertainty:
+    coverage_evidence_role:
     coverage_dimension:
     coverage_evidence:
     line_evidence_status:
@@ -533,12 +416,12 @@ Keep the final answer practical: identify what to write next, why it matters, an
 
 ## Quality Bar For Proposed Test Points
 
-A high-quality coverage-driven test point should normally include:
+A high-quality scenario-coverage-driven test point should normally include:
 
-- A precise architecture condition, not just an instruction mnemonic.
+- A precise cross execution scenario, not just an instruction mnemonic or a source line.
 - An observable oracle: memory bytes, register value, trap cause/tval, CSR bit, vector element result, or deterministic side effect.
 - At least one meaningful corner path when useful: fault, mask skip, partial progress, permission denied, reservation failure, trigger timing, boundary split, stale translation/cache state, or unsupported access.
-- A clear reason it covers a Spike branch/call gap.
+- A clear reason the supporting Spike entry/line/branch/call/path-marker evidence implies a missing scenario.
 - A path confidence label. Do not call something covered as a full path if you only have aggregate branch coverage.
 - Source/gcov evidence for at least the top candidates, unless the user only asks for a coarse first pass.
 - A duplicate-check plan against existing hyptest tests.

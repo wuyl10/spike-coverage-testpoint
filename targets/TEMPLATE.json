@@ -51,6 +51,23 @@
     "Optional notes for the agent about how to interpret coverage evidence for this target.",
     "Keep target-specific spec assumptions here."
   ],
+  "scenario_coverage": {
+    "purpose": "Optional target-owned guidance for architecture-visible cross execution scenario coverage. Use these fields as a reporting checklist, not as a Cartesian product to enumerate blindly.",
+    "scenario_axes": [
+      "instruction/access class",
+      "privilege/profile/gate",
+      "address/translation/protection/device condition",
+      "exception/fault/trigger/cache/vector/atomic subcondition",
+      "architectural observable"
+    ],
+    "evidence_policy": [
+      "Line/branch/call/entry coverage is supporting evidence, not the test intent.",
+      "Do not claim a cross scenario is covered unless same-flow evidence exists.",
+      "Derive cross scenario signatures from target scope, Spike source, .gcov, single-case deltas, or path-marker records.",
+      "Do not generate a blind Cartesian product from scenario_axes."
+    ],
+    "priority_scenarios": []
+  },
   "path_analysis": {
     "purpose": "Optional path-aware evidence policy. Use this to describe how the agent should report and prove execution-flow coverage when gcov branch/call coverage is not enough.",
     "confidence_levels": [

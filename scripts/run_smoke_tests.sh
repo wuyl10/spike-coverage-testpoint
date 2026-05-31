@@ -34,6 +34,9 @@ python3 scripts/analyze_spike_gcov.py \
   --json-out "$OUT_DIR/summary.json" \
   --markdown-out "$OUT_DIR/summary.md"
 grep -q "入口/共享路径混合缺口排序" "$OUT_DIR/summary.md"
+grep -q "cross 场景证据缺口" "$OUT_DIR/summary.md"
+grep -q "待解析 cross 场景" "$OUT_DIR/summary.md"
+grep -q "cross 场景轴 checklist" "$OUT_DIR/summary.md"
 grep -q "类型原因" "$OUT_DIR/summary.md"
 grep -q "低调用覆盖入口" "$OUT_DIR/summary.md"
 require_report_sections "$OUT_DIR/summary.md"
@@ -67,6 +70,21 @@ cat > "$OUT_DIR/synthetic_target.json" <<'EOF'
     "ordinary path": ["riscv/ordinary.cc"]
   },
   "analysis_notes": [],
+  "scenario_coverage": {
+    "purpose": "Smoke fixture for cross scenario evidence fields",
+    "scenario_axes": [
+      "instruction/access class",
+      "privilege/profile/gate",
+      "address/translation/protection/device condition",
+      "exception/fault/trigger/cache/vector/atomic subcondition",
+      "architectural observable"
+    ],
+    "evidence_policy": [
+      "Line/branch/call coverage is supporting evidence, not the scenario itself.",
+      "Do not generate a blind Cartesian product."
+    ],
+    "priority_scenarios": []
+  },
   "path_analysis": {
     "confidence_levels": [
       "confirmed-not-executed",
@@ -156,6 +174,10 @@ python3 scripts/build_handoff_packet.py \
   --top 1 \
   --markdown-out "$OUT_DIR/synth_handoff.md"
 grep -q "dimension_gate" "$OUT_DIR/synth_handoff.md"
+grep -q "scenario_coverage_gap" "$OUT_DIR/synth_handoff.md"
+grep -q "cross_scenario_signature" "$OUT_DIR/synth_handoff.md"
+grep -q "coverage_evidence_role" "$OUT_DIR/synth_handoff.md"
+grep -q "target_scenario_axes" "$OUT_DIR/synth_handoff.md"
 grep -q "default_gate_eligible: no - target dimension is manual/special-run" "$OUT_DIR/synth_handoff.md"
 grep -q "low_call_entries" "$OUT_DIR/synth_handoff.md"
 grep -q "same_flow_evidence" "$OUT_DIR/synth_handoff.md"
@@ -182,6 +204,9 @@ python3 scripts/build_handoff_packet.py \
   --top 1 \
   --markdown-out "$OUT_DIR/handoff.md"
 grep -q "line_evidence_status" "$OUT_DIR/handoff.md"
+grep -q "scenario_coverage_gap" "$OUT_DIR/handoff.md"
+grep -q "cross_scenario_signature" "$OUT_DIR/handoff.md"
+grep -q "coverage_evidence_role" "$OUT_DIR/handoff.md"
 grep -q "inspection-hint-weak" "$OUT_DIR/handoff.md"
 grep -q "profile_gate" "$OUT_DIR/handoff.md"
 grep -q "same_flow_evidence" "$OUT_DIR/handoff.md"
@@ -190,6 +215,10 @@ python3 scripts/check_handoff_final.py --strict-handoff "$OUT_DIR/handoff.md"
 
 cat > "$OUT_DIR/bad_default_gate.md" <<'EOF'
 evidence_class: shared-path
+scenario_coverage_gap: in-scope scalar load PMP deny
+cross_scenario_signature:
+  instruction_or_access_class: scalar load
+coverage_evidence_role: supporting evidence only
 line_evidence_status: exact-shared-source-evidence
 same_flow_evidence:
   status: aggregate-only
@@ -206,6 +235,10 @@ fi
 
 cat > "$OUT_DIR/good_default_gate.md" <<'EOF'
 evidence_class: shared-path
+scenario_coverage_gap: in-scope scalar load PMP deny
+cross_scenario_signature:
+  instruction_or_access_class: scalar load
+coverage_evidence_role: supporting evidence only
 line_evidence_status: exact-shared-source-evidence
 same_flow_evidence:
   status: single-case-increment-confirmed
@@ -219,6 +252,10 @@ python3 scripts/check_handoff_final.py --strict-handoff "$OUT_DIR/good_default_g
 
 cat > "$OUT_DIR/generic_skeleton.md" <<'EOF'
 evidence_class: shared-path
+scenario_coverage_gap: needs source confirmation: map coverage evidence to the missing architecture-visible cross execution scenario
+cross_scenario_signature:
+  instruction_or_access_class: needs source confirmation: derive from coverage dimension, representative entries, and inspected Spike source
+coverage_evidence_role: supporting evidence only
 line_evidence_status: exact-shared-source-evidence
 same_flow_evidence:
   status: aggregate-only
@@ -233,6 +270,10 @@ if python3 scripts/check_handoff_final.py --strict-final-report "$OUT_DIR/generi
 fi
 cat > "$OUT_DIR/generic_profile_skeleton.md" <<'EOF'
 evidence_class: shared-path
+scenario_coverage_gap: in-scope scalar load PMP deny
+cross_scenario_signature:
+  instruction_or_access_class: scalar load
+coverage_evidence_role: supporting evidence only
 line_evidence_status: exact-shared-source-evidence
 same_flow_evidence:
   status: aggregate-only

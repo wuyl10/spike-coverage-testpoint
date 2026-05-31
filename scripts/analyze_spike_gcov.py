@@ -74,6 +74,7 @@ class Target:
     source_priority: list[str]
     inspection_hints: dict[str, list[str]]
     handoff_defaults: dict[str, Any]
+    scenario_coverage: dict[str, Any]
     path_analysis: dict[str, Any]
     special_run_scope: list[str]
     manual_only_dimensions: list[str]
@@ -180,6 +181,7 @@ def load_target(path: Path) -> Target:
         source_priority=as_str_list(data.get("source_priority"), "source_priority"),
         inspection_hints=as_str_list_map(data.get("inspection_hints"), "inspection_hints"),
         handoff_defaults=as_object(data.get("handoff_defaults"), "handoff_defaults"),
+        scenario_coverage=as_object(data.get("scenario_coverage"), "scenario_coverage"),
         path_analysis=as_object(data.get("path_analysis"), "path_analysis"),
         special_run_scope=as_str_list(data.get("special_run_scope"), "special_run_scope"),
         manual_only_dimensions=as_str_list(data.get("manual_only_dimensions"), "manual_only_dimensions"),
@@ -726,20 +728,20 @@ def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
     low_branch_count = len(summary.get("low_branch_entries", []))
     low_call_count = len(summary.get("low_call_entries", []))
     top_candidates = summary.get("candidates", [])[:3]
-    print("# Spike 覆盖率汇总证据")
+    print("# Spike 场景覆盖证据汇总")
     print()
     print("## 结论")
     print()
     if top_candidates:
         dims = ", ".join(f"`{candidate['dimension']}`" for candidate in top_candidates)
-        print(f"- 当前优先级最高的覆盖率缺口是 {dims}。")
+        print(f"- 当前优先级最高的 cross 场景证据缺口来自 {dims}。")
     else:
         print("- 当前 target/focus 下没有匹配到可排序的覆盖率缺口。")
     print(
         f"- 汇总：0% 入口={zero_count}，低行覆盖入口={low_line_count}，"
         f"低分支覆盖入口={low_branch_count}，低调用覆盖入口={low_call_count}。"
     )
-    print("- 本报告只是覆盖率证据；agent 仍需把缺口映射到架构场景和测试点。")
+    print("- 本报告只是 counter/source/path 支撑证据；最终目标是映射出未覆盖的 cross 执行场景和测试点。")
     print()
     print("## 数据")
     print()
@@ -750,9 +752,9 @@ def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
     print()
     print("## 限制与下一步")
     print()
-    print("- 汇总 gcov 的 line/branch/call 数据不能证明同一条动态执行流已经覆盖。")
-    print("- 提具体测试点前，要先精查高优先级 `.gcov` 文件和 Spike 源码。")
-    print("- 声称完整路径已覆盖前，需要单 case 增量证据或 path marker。")
+    print("- 汇总 gcov 的 line/branch/call 数据不能证明同一条动态执行流或 cross 场景已经覆盖。")
+    print("- 提具体测试点前，要先精查高优先级 `.gcov` 文件和 Spike 源码，补出 cross scenario signature。")
+    print("- 声称完整场景已覆盖前，需要单 case 增量证据或 path marker 证明 same-flow。")
     print()
     print("## 证据")
     print()
@@ -775,6 +777,10 @@ def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
         print(f"- summary 排除规则: {'; '.join(filters)}")
     if target["source_priority"]:
         print(f"- source 优先级: {'; '.join(target['source_priority'])}")
+    if target.get("scenario_coverage"):
+        scenario_axes = target["scenario_coverage"].get("scenario_axes", [])
+        if isinstance(scenario_axes, list) and scenario_axes:
+            print(f"- cross 场景轴 checklist: {'; '.join(str(item) for item in scenario_axes)}")
     print(
         "- 低覆盖阈值: "
         f"line<{low_line_threshold:g}%, branch<{low_branch_threshold:g}%, call<{low_call_threshold:g}%"
@@ -813,13 +819,14 @@ def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
 
     def print_candidate_table(title: str, candidates: list[dict], max_rows: int) -> None:
         print(f"\n## {title}（前 {max_rows} 项）")
-        print("| 排名 | 分数 | 证据类型 | 类型原因 | 维度 | 覆盖率证据 | 排序理由 | 入口选择原因 | Gate | 代表入口 | 缺失 target 入口 | 下一步精查 |")
-        print("|---:|---:|---|---|---|---|---|---|---|---|---|---|")
+        print("| 排名 | 分数 | 证据类型 | 类型原因 | 维度 | 待解析 cross 场景 | Supporting coverage evidence | 排序理由 | 入口选择原因 | Gate | 代表入口 | 缺失 target 入口 | 下一步精查 |")
+        print("|---:|---:|---|---|---|---|---|---|---|---|---|---|---|")
         for idx, candidate in enumerate(candidates[:max_rows], start=1):
             gate = candidate.get("dimension_gate", {})
             gate_note = gate.get("gate_note") or ("manual/special-run" if gate.get("manual_only") else "-")
+            scenario_stub = "needs source review: map evidence to cross execution scenario"
             print(
-                "| {rank} | {score:.2f} | {klass} | {reason} | {dimension} | {evidence} | {rationale} | {entry_reason} | {gate} | `{entries}` | `{missing}` | `{inspect}` |".format(
+                "| {rank} | {score:.2f} | {klass} | {reason} | {dimension} | {scenario_stub} | {evidence} | {rationale} | {entry_reason} | {gate} | `{entries}` | `{missing}` | `{inspect}` |".format(
                     rank=idx,
                     score=candidate["score"],
                     klass=candidate.get("evidence_class", "unknown"),
@@ -828,6 +835,7 @@ def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
                         + f" ({candidate.get('classification_confidence', 'unknown')})"
                     ).replace("|", "\\|"),
                     dimension=candidate["dimension"],
+                    scenario_stub=scenario_stub,
                     evidence=candidate["evidence"].replace("|", "\\|"),
                     rationale=candidate["rationale"].replace("|", "\\|"),
                     entry_reason=str(candidate.get("entry_selection_reason", "-")).replace("|", "\\|"),

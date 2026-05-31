@@ -1,8 +1,8 @@
 # Coverage Target Files
 
 Target files are the single place to define what the Spike coverage analysis is
-about. Keep concrete scope, spec assumptions, exclusions, and dimensions here,
-not in `SKILL.md` and not hardcoded in scripts.
+about. Keep concrete scope, spec assumptions, exclusions, scenario axes, and
+dimensions here, not in `SKILL.md` and not hardcoded in scripts.
 
 ## Fields
 
@@ -32,7 +32,12 @@ not in `SKILL.md` and not hardcoded in scripts.
 - `coverage_thresholds`: optional low-coverage thresholds used by
   `analyze_spike_gcov.py`. Supported keys are `low_line_pct`,
   `low_branch_pct`, and `low_call_pct`; defaults are 20/10/10.
-- `dimensions`: coverage groups used by `analyze_spike_gcov.py`.
+- `dimensions`: evidence groups used by `analyze_spike_gcov.py`. These are not
+  final test intents; the agent still maps evidence to cross execution
+  scenarios.
+- `scenario_coverage`: optional scenario-first guidance. Use it to name the
+  cross-scenario axes that matter for this target and to state evidence policy.
+  It is a reporting checklist, not a full scenario matrix.
 - `path_analysis`: optional path-sensitive evidence policy. Use it for path
   confidence labels, reporting checklists, single-case increment rules, and
   path-marker names. It is not a complete path matrix or architecture spec.
@@ -78,6 +83,33 @@ the must-pass source events before calling a path confirmed-not-executed.
 `analyze_spike_gcov.py` reports `missing_entries_by_dimension` when a target
 entry does not appear in the selected gcov snapshot. This is not the same as 0%
 coverage; it may mean a Spike version/profile/build did not emit that entry.
+
+## Scenario Coverage
+
+Use `scenario_coverage` when the target cares about which architecture-visible
+cross execution scenarios were exercised, not about line/branch/call coverage
+as an end in itself. The field is optional but recommended for new targets.
+
+Recommended subfields:
+
+- `purpose`: short target-specific statement of what scenario coverage means.
+- `scenario_axes`: checklist axes for final reports, such as instruction/access
+  class, privilege/profile/gate, address/translation/protection/device
+  condition, exception/trigger/cache/vector/atomic subcondition, and
+  architectural observable.
+- `evidence_policy`: guardrails that keep coverage counters in the evidence
+  layer. Include a reminder not to claim same-flow scenario coverage from
+  aggregate counters alone.
+- `priority_scenarios`: optional hints for especially valuable scenario
+  families. Keep them high-level; do not use this as an exhaustive matrix.
+
+Important boundary:
+
+- Line, branch, call, entry, and case-counter movement are supporting evidence.
+- The final recommendation must name the missing cross scenario and observable.
+- Do not generate blind Cartesian products from `scenario_axes` or
+  `priority_scenarios`; derive candidate signatures from target scope, Spike
+  source, `.gcov`, single-case deltas, or path-marker records.
 
 ## Path Analysis
 
