@@ -13,14 +13,17 @@ import argparse
 import json
 import re
 from pathlib import Path
+from string import Formatter
 from typing import Any
 
+from target_config import load_json_object, resolve_project_spec_path, unsupported_active_matches
 
 REQUIRED_TOP_LEVEL = {
     "name",
     "title",
     "description",
-    "spec",
+    "project_spec",
+    "coverage_focus",
     "scope_in",
     "scope_out",
     "summary_include_regex",
@@ -44,6 +47,10 @@ OPTIONAL_TOP_LEVEL = {
     "dimension_metadata",
     "duplicate_search_aliases",
     "coverage_thresholds",
+}
+
+DEPRECATED_TOP_LEVEL = {
+    "spec",
 }
 
 REQUIRED_HANDOFF = {
@@ -147,6 +154,208 @@ def check_dimension_item(item: str, dim: str, errors: list[str]) -> None:
         )
 
 
+def check_project_spec(
+    data: dict[str, Any],
+    target_path: Path,
+    errors: list[str],
+    warnings: list[str],
+) -> dict[str, Any]:
+    value = data.get("project_spec")
+    if not isinstance(value, str) or not value:
+        errors.append("`project_spec` must be a non-empty string path to specs/*.json")
+        return {}
+    if not value.endswith(".json"):
+        warnings.append("`project_spec` should usually point to a JSON file under specs/")
+
+    try:
+        spec_path = resolve_project_spec_path(target_path, value)
+        spec_data = load_json_object(spec_path)
+    except FileNotFoundError:
+        errors.append(f"`project_spec` path `{value}` does not exist")
+        return {}
+    except json.JSONDecodeError as exc:
+        errors.append(f"`project_spec` file `{spec_path}` is not valid JSON: {exc}")
+        return {}
+    except TypeError as exc:
+        errors.append(f"`project_spec` file `{spec_path}` must contain a JSON object")
+        return {}
+    for key in ("name", "title", "description"):
+        if not isinstance(spec_data.get(key), str) or not spec_data.get(key):
+            warnings.append(f"`project_spec` file `{spec_path}` is missing non-empty `{key}`")
+    check_project_spec_coverage_spike(spec_data, spec_path, errors, warnings)
+    check_project_spec_rules(spec_data, spec_path, errors, warnings)
+    return spec_data
+
+
+def check_project_spec_coverage_spike(
+    spec_data: dict[str, Any],
+    spec_path: Path,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    coverage_spike = spec_data.get("coverage_spike")
+    if coverage_spike is None:
+        errors.append(
+            f"`project_spec` file `{spec_path}` is missing `coverage_spike`; "
+            "define project-owned coverage Spike defaults or pass --command-template explicitly for special runs"
+        )
+        return
+    if not isinstance(coverage_spike, dict):
+        errors.append(f"`project_spec` file `{spec_path}` has non-object `coverage_spike`")
+        return
+
+    allowed_fields = {"default_isa", "default_priv", "default_args", "notes"}
+    unknown = sorted(set(coverage_spike) - allowed_fields)
+    if unknown:
+        warnings.append(f"`project_spec.coverage_spike` in `{spec_path}` has unknown fields: " + ", ".join(unknown))
+
+    for key in ("default_isa", "default_priv"):
+        if key in coverage_spike and not isinstance(coverage_spike[key], str):
+            errors.append(f"`project_spec.coverage_spike.{key}` in `{spec_path}` must be a string")
+        elif key in coverage_spike and not coverage_spike[key]:
+            warnings.append(f"`project_spec.coverage_spike.{key}` in `{spec_path}` is empty")
+
+    notes = coverage_spike.get("notes", [])
+    if notes is not None and not is_str_list(notes):
+        errors.append(f"`project_spec.coverage_spike.notes` in `{spec_path}` must be a list of strings")
+
+    raw_args = coverage_spike.get("default_args", [])
+    if isinstance(raw_args, str):
+        default_args = [raw_args]
+    elif isinstance(raw_args, list) and all(isinstance(item, str) for item in raw_args):
+        default_args = raw_args
+    else:
+        errors.append(
+            f"`project_spec.coverage_spike.default_args` in `{spec_path}` must be a string or list of strings"
+        )
+        return
+
+    if not default_args:
+        errors.append(
+            f"`project_spec.coverage_spike.default_args` in `{spec_path}` is empty; "
+            "the case matrix runner needs project-owned default Spike args when --command-template is omitted"
+        )
+        return
+
+    scalar_fields = {
+        key
+        for key, value in coverage_spike.items()
+        if isinstance(value, (str, int, float)) and not isinstance(value, bool)
+    }
+    simple_name_re = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+    for raw_arg in default_args:
+        try:
+            parsed_fields = [field_name for _, field_name, _, _ in Formatter().parse(raw_arg)]
+        except ValueError as exc:
+            errors.append(
+                f"`project_spec.coverage_spike.default_args` item `{raw_arg}` in `{spec_path}` "
+                f"has invalid format syntax: {exc}"
+            )
+            continue
+        for field_name in parsed_fields:
+            if field_name is None:
+                continue
+            if not simple_name_re.match(field_name):
+                errors.append(
+                    f"`project_spec.coverage_spike.default_args` item `{raw_arg}` in `{spec_path}` "
+                    f"uses unsupported placeholder `{{{field_name}}}`; use a simple scalar field name"
+                )
+                continue
+            if field_name not in scalar_fields:
+                errors.append(
+                    f"`project_spec.coverage_spike.default_args` item `{raw_arg}` in `{spec_path}` "
+                    f"references unknown scalar field `{{{field_name}}}`"
+                )
+
+
+def check_project_spec_rules(
+    spec_data: dict[str, Any],
+    spec_path: Path,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    support = spec_data.get("isa_profile", {}).get("support", {})
+    if support is not None and not isinstance(support, dict):
+        errors.append(f"`project_spec` file `{spec_path}` has non-object `isa_profile.support`")
+        support = {}
+
+    rules = spec_data.get("unsupported_feature_rules", {})
+    if rules is None:
+        return
+    if not isinstance(rules, dict):
+        errors.append(f"`project_spec` file `{spec_path}` has non-object `unsupported_feature_rules`")
+        return
+
+    rule_fields = {"tokens", "summary_exclude_regex", "line_exclude_regex", "scope_warning_regex"}
+    regex_fields = {"summary_exclude_regex", "line_exclude_regex", "scope_warning_regex"}
+    for extension, body in rules.items():
+        rule_name = f"`project_spec.unsupported_feature_rules.{extension}`"
+        if not isinstance(extension, str) or not extension:
+            errors.append(f"`project_spec` file `{spec_path}` has an invalid unsupported-feature rule name")
+            continue
+        if not isinstance(body, dict):
+            errors.append(f"{rule_name} must be an object")
+            continue
+
+        status = str(support.get(extension, "")).upper()
+        if status and status != "NO":
+            warnings.append(f"{rule_name} is defined but isa_profile.support marks {extension}={status}")
+        elif not status:
+            warnings.append(f"{rule_name} is defined but {extension} is missing from isa_profile.support")
+
+        unknown = sorted(set(body) - rule_fields)
+        if unknown:
+            warnings.append(f"{rule_name} has unknown fields: " + ", ".join(unknown))
+
+        for field in rule_fields:
+            value = body.get(field, [])
+            if isinstance(value, str):
+                values = [value]
+            elif isinstance(value, list) and all(isinstance(item, str) for item in value):
+                values = value
+            else:
+                errors.append(f"{rule_name}.{field} must be a string or list of strings")
+                continue
+            if field == "tokens" and not values:
+                warnings.append(f"{rule_name}.tokens is empty; target active-scope checks will be weak")
+            if field in regex_fields:
+                for pattern in values:
+                    try:
+                        re.compile(pattern)
+                    except re.error as exc:
+                        errors.append(f"{rule_name}.{field} regex `{pattern}` does not compile: {exc}")
+
+
+def check_coverage_focus(data: dict[str, Any], errors: list[str], warnings: list[str]) -> None:
+    focus = data.get("coverage_focus")
+    if not isinstance(focus, dict):
+        errors.append("`coverage_focus` must be an object")
+        return
+    if not isinstance(focus.get("profile"), str) or not focus.get("profile"):
+        warnings.append("`coverage_focus.profile` is missing; reports will be less clear")
+    if "purpose" in focus and not isinstance(focus.get("purpose"), str):
+        errors.append("`coverage_focus.purpose` must be a string")
+    for key in ("included_features", "excluded_features", "notes"):
+        if key in focus and not is_str_list(focus.get(key)):
+            errors.append(f"`coverage_focus.{key}` must be a list of strings")
+    deprecated = sorted(
+        {"included_extensions_or_features", "excluded_extensions_or_features", "source_of_truth"} & set(focus)
+    )
+    if deprecated:
+        errors.append(
+            "`coverage_focus` contains old spec field names; use included_features/excluded_features/purpose instead: "
+            + ", ".join(deprecated)
+        )
+
+
+def check_project_spec_exclusions(data: dict[str, Any], spec_data: dict[str, Any], errors: list[str]) -> None:
+    for extension, matched in unsupported_active_matches(data, spec_data).items():
+        errors.append(
+            f"`project_spec` marks {extension}=NO but target active scope/dimensions include: "
+            + ", ".join(matched)
+        )
+
+
 def validate(path: Path) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -157,7 +366,13 @@ def validate(path: Path) -> tuple[list[str], list[str]]:
     missing = sorted(REQUIRED_TOP_LEVEL - set(data))
     if missing:
         errors.append("missing required fields: " + ", ".join(missing))
-    unknown = sorted(set(data) - REQUIRED_TOP_LEVEL - OPTIONAL_TOP_LEVEL)
+    deprecated = sorted(DEPRECATED_TOP_LEVEL & set(data))
+    if deprecated:
+        errors.append(
+            "deprecated top-level fields are no longer allowed; use `project_spec` plus `coverage_focus`: "
+            + ", ".join(deprecated)
+        )
+    unknown = sorted(set(data) - REQUIRED_TOP_LEVEL - OPTIONAL_TOP_LEVEL - DEPRECATED_TOP_LEVEL)
     if unknown:
         warnings.append("unknown top-level fields: " + ", ".join(unknown))
 
@@ -165,11 +380,10 @@ def validate(path: Path) -> tuple[list[str], list[str]]:
         if not isinstance(data.get(key), str) or not data.get(key):
             errors.append(f"`{key}` must be a non-empty string")
 
-    spec = data.get("spec")
-    if not isinstance(spec, dict):
-        errors.append("`spec` must be an object")
-    elif "profile" not in spec:
-        warnings.append("`spec.profile` is missing; reports will be less clear")
+    spec_data = check_project_spec(data, path, errors, warnings)
+    check_coverage_focus(data, errors, warnings)
+    if spec_data:
+        check_project_spec_exclusions(data, spec_data, errors)
 
     for key in ("scope_in", "scope_out", "summary_exclude_prefixes", "source_priority", "analysis_notes"):
         check_str_list(data, key, errors)

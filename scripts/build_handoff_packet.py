@@ -270,7 +270,7 @@ def cross_scenario_signature_stub(
             "derive from coverage dimension, representative entries, and inspected Spike source"
         ),
         "privilege_profile_or_gate": needs_agent(
-            "derive from target spec/profile and dimension gate"
+            "derive from target coverage_focus/profile and dimension gate"
             + ("; current dimension is manual/special-run" if gate.get("manual_only") else "")
         ),
         "address_translation_protection_device_condition": needs_agent(
@@ -328,7 +328,7 @@ def infer_profile_from_entries(entries: list[str], dimension: str) -> dict[str, 
     haystack = " ".join([dimension, *entries]).lower()
     rules = [
         ("V", ("riscv/insns/v", " vector ", "vector")),
-        ("A / Zaamo / Zalrsc", ("amo", "amocas", "lr_", "sc_")),
+        ("A / Zaamo / Zalrsc", ("amo", "lr_", "sc_")),
         ("C / Zc*", ("riscv/insns/c_", " compressed ", "compressed")),
         ("F/D/Q/Zfh family", ("riscv/insns/fl", "riscv/insns/fs", " fp ", "floating")),
         ("Zicbom/Zicboz/Zicbop family", ("cbo_", "cbo/", "cbo")),
@@ -344,14 +344,16 @@ def infer_profile_from_entries(entries: list[str], dimension: str) -> dict[str, 
 
 
 def profile_gate_stub(candidate: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
-    spec = target.get("spec", {}) if isinstance(target.get("spec"), dict) else {}
-    included = spec.get("included_extensions_or_features", [])
-    excluded = spec.get("excluded_extensions_or_features", [])
+    focus = target.get("coverage_focus", {}) if isinstance(target.get("coverage_focus"), dict) else {}
+    project_spec = target.get("project_spec_data", {}) if isinstance(target.get("project_spec_data"), dict) else {}
+    included = focus.get("included_features", [])
+    excluded = focus.get("excluded_features", [])
     if not isinstance(included, list):
         included = []
     if not isinstance(excluded, list):
         excluded = []
-    spec_profile = spec.get("profile", "")
+    spec_profile = focus.get("profile", "")
+    project_spec_name = project_spec.get("name", "") if isinstance(project_spec.get("name", ""), str) else ""
     entries = ", ".join(candidate.get("entries", [])[:4])
     class_note = candidate.get("evidence_class", "unknown")
     inferred = infer_profile_from_entries(candidate.get("entries", []), str(candidate.get("dimension", "")))
@@ -371,8 +373,8 @@ def profile_gate_stub(candidate: dict[str, Any], target: dict[str, Any]) -> dict
         ),
         **inferred,
         "current_profile_evidence": (
-            f"target spec profile={spec_profile or 'unspecified'}; "
-            f"included={included}; excluded={excluded}"
+            f"project_spec={project_spec_name or target.get('project_spec') or 'unspecified'}; "
+            f"coverage_focus profile={spec_profile or 'unspecified'}; included={included}; excluded={excluded}"
         ),
         "default_gate_eligible": default_gate_eligible,
         "profile_gate_note": (

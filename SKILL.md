@@ -1,6 +1,6 @@
 ---
 name: spike-coverage-testpoint
-description: Analyze official/community Spike coverage evidence from gcov/gcovr/.gcov/.gcda/.gcno/coverage HTML to find missing architecture-visible cross execution scenarios, then convert those gaps into evidence-backed hyptest test-point plans. Must use whenever the user asks to inspect Spike coverage gaps, scenario/cross/path coverage, low line/branch/call counters as evidence, path-sensitive MemBlock coverage, single-case incremental coverage, path-marker instrumentation, or what riscv-hyp-tests/hyptest tests should be added from Spike coverage. Always use a target file under targets/*.json, or create one from targets/TEMPLATE.json, so concrete scope/spec/exclusions/scenario axes/path evidence policy stay outside the skill body. The bundled scripts only extract and rank counter/source/path evidence; the agent must judge which cross execution scenario is missing, whether it is worth testing, and how to design the test point. If the user wants to add or modify ai_test_cases/manual_test_cases/test_point/test_register.c, also use hyptest-workflow for implementation.
+description: Analyze official/community Spike coverage evidence from gcov/gcovr/.gcov/.gcda/.gcno/coverage HTML to find missing architecture-visible cross execution scenarios, then convert those gaps into evidence-backed hyptest test-point plans. Must use whenever the user asks to inspect Spike coverage gaps, scenario/cross/path coverage, low line/branch/call counters as evidence, path-sensitive MemBlock coverage, single-case incremental coverage, path-marker instrumentation, or what riscv-hyp-tests/hyptest tests should be added from Spike coverage. Always use a project spec under specs/*.json plus a target file under targets/*.json, or create them from specs/TEMPLATE.json and targets/TEMPLATE.json, so the current project implementation stays separate from the concrete coverage slice/scope/exclusions/scenario axes/path evidence policy. The bundled scripts only extract and rank counter/source/path evidence; the agent must judge which cross execution scenario is missing, whether it is worth testing, and how to design the test point. If the user wants to add or modify ai_test_cases/manual_test_cases/test_point/test_register.c, also use hyptest-workflow for implementation.
 ---
 
 # Spike Coverage Testpoint
@@ -20,10 +20,10 @@ agent负责：把证据映射成未覆盖的 cross 执行场景/路径签名，�
 
 这里的 cross 执行场景通常包含这些轴的一个有意义组合：
 
-- instruction/access class：fetch、scalar load/store、FP memory、vector load/store、LR/SC、AMO/AMOCAS、CBO/CMO、fence/sfence 等。
+- instruction/access class：fetch、scalar load/store、FP memory、vector load/store、LR/SC、AMO、project spec 支持 Zacas 时的 AMOCAS、CBO/CMO、fence/sfence 等。
 - privilege/profile/gate：M/S/U、ISA/profile 是否启用、默认 gate 还是 manual/special-run。
 - address/translation/protection/device condition：bare/stage1、TLB hit/miss/walk、边界/对齐、PMP/PMA/PBMT、MMIO/device/responder。
-- exception/fault/trigger/cache/vector/atomic subcondition：page/access/misaligned fault、trigger timing、cache/NMI、mask/vstart/fault-only-first/indexed/whole、reservation/CAS 成败等。
+- exception/fault/trigger/cache/vector/atomic subcondition：page/access/misaligned fault、trigger timing、cache/NMI、mask/vstart/fault-only-first/indexed/whole、reservation、project spec 支持时的 CAS 成败等。
 - architectural observable：寄存器、内存、trap cause/tval、CSR、vector element、device side effect 或确定的 pass/fail 行为。
 
 每个最终候选都必须回答：
@@ -37,19 +37,31 @@ Same-flow confidence: 证据是否证明这些条件发生在同一条动态指�
 
 不要从 target 里的轴盲目枚举笛卡尔积。只从 target scope、Spike 源码、`.gcov`、单 case 增量或 path-marker 记录反推有证据支撑的 cross 场景；证据不足时标 `edge-covered-path-unknown`、`needs-path-instrumentation` 或 `needs source confirmation`。
 
-## Target Files First
+## Spec And Target Files First
 
-每次分析必须先选一个 target 文件，或从 `targets/TEMPLATE.json` 新建一个。target 文件是统一管理“我要测什么、规格是什么、排除什么、覆盖维度怎么分”的地方。
+每次分析必须先选一个 project spec 和一个 target。两层不要混：
 
-不要把具体规格写死在 `SKILL.md` 或脚本里。当前已有目标文件放在 `targets/`，新目标从 `targets/TEMPLATE.json` 复制后填写。
+- `specs/*.json`: 当前项目实现。描述 coverage Spike/hyptest ELF 的运行边界、环境变量接口、源码/覆盖率证据来源、项目里有哪些实现面可被 target 选择。
+- `targets/*.json`: 当前项目实现下要看哪一块覆盖率。描述本次 coverage slice 的 `coverage_focus`、`scope_in/out`、过滤规则、维度、场景 checklist、path/gate 策略。
+
+不要把项目实现写进 target，也不要把具体 target 范围写进 spec，更不要写死在 `SKILL.md` 或脚本里。已有项目规格放在 `specs/`，已有分析目标放在 `targets/`。
+
+project spec 文件负责：
+
+- `environment`: 稳定环境变量接口和默认派生路径，例如 `HYPTEST_SPIKE_COV`、`HYPTEST_HOME`、coverage Spike bin。
+- `implementation_model`: 覆盖率 Spike 怎么跑、不能和什么 runner/编译流程混用、证据从哪里来。
+- `available_implementation_features`: 当前项目实现里可供 target 选择的实现面。
+- `unsupported_feature_rules`: 对 support matrix 中 `NO` 的实现面提供 tokens、summary/line 过滤正则和 runner scope warning 正则；脚本会自动把这些规则合并到 target 的有效过滤/告警里。
+- `target_policy`: target 如何在该项目实现下选择具体覆盖率切片。
 
 target 文件负责：
 
-- `spec`: 本次目标的规格/feature/profile 假设；用户说“我要测什么，规格是什么”时填这里。
+- `project_spec`: 指向一个 `specs/*.json`。
+- `coverage_focus`: 本次要看的覆盖率切片/profile/包含与排除特性；用户说“我想看哪个模块/不含哪个扩展”时填这里。
 - `scope_in`: 本次要分析的架构范围、组件范围、指令类别、行为类别。
 - `scope_out`: 本次明确不分析的范围。
-- `summary_include_regex` / `summary_exclude_prefixes` / `summary_exclude_regex`: summary 级别证据过滤。
-- `line_exclude_regex`: `.gcov` 行级证据过滤。
+- `summary_include_regex` / `summary_exclude_prefixes` / `summary_exclude_regex`: summary 级别证据过滤；这里只放 target 额外规则，project spec 中 `NO` 特性的过滤由脚本自动合并。
+- `line_exclude_regex`: `.gcov` 行级证据过滤；这里只放 target 额外规则，project spec 中 `NO` 特性的过滤由脚本自动合并。
 - `coverage_thresholds`: 可选。summary 低覆盖阈值，默认 line<20%、branch<10%、call<10%；不同目标需要不同阈值时只改 target。
 - `dimensions`: 脚本分组用的覆盖维度。
 - `scenario_coverage`: 可选。目标级 cross 场景覆盖说明，包括场景轴、证据策略和优先场景提示。它是 checklist，不是完整组合矩阵。
@@ -57,7 +69,7 @@ target 文件负责：
 - `special_run_scope` / `manual_only_dimensions` / `dimension_metadata`: target 级 gate 约束。脚本会把它们带到 candidate/handoff；agent 不得把 manual-only 维度推荐成 default gate。
 - `analysis_notes` / `duplicate_search_terms`: agent 做场景解释和查重时使用的目标专用信息。
 
-如果用户说“我要分析 X，不包含 Y”，先检查是否已有合适 target；没有就复制模板新建 target。后续脚本、报告、交接包都引用这个 target。
+如果用户说“我要分析 X，不包含 Y”，先检查是否已有合适 project spec 和 target；项目实现没有就从 `specs/TEMPLATE.json` 新建，覆盖率切片没有就从 `targets/TEMPLATE.json` 新建。后续脚本、报告、交接包都引用这个 target，target 再引用 project spec。
 
 ## When Triggered
 
@@ -101,8 +113,8 @@ automatically instead of asking.
 Use this default structure:
 
 ```text
-Official Spike coverage repo:
-  /nfs/home/wuyuanlong/workspace/offical-spike-coverage
+Spike coverage repo:
+  <spike_cov_repo>
 
 Human-readable Markdown reports:
   <coverage_repo>/cov_doc/reports/<target_name>/<run_tag>/
@@ -189,7 +201,8 @@ Keep this boundary strict:
 
 | Role | Responsibility |
 |---|---|
-| Target file | Defines spec assumptions, scope, exclusions, dimensions, scenario axes, and target-specific guidance. |
+| Project spec | Defines current project implementation, coverage runner boundary, stable environment variables, and available implementation surfaces. |
+| Target file | Defines the concrete coverage slice under a project spec: focus/profile, scope, exclusions, dimensions, scenario axes, and target-specific guidance. |
 | Scripts | Quickly find supporting evidence: files, dimensions, functions, source lines, branches, calls, 0% entries, low branch/call coverage; compare single-case gcov snapshots; parse optional path-marker logs. |
 | Agent | Decide which cross execution scenario the evidence implies, whether it is a full path or only an edge, whether it is worth testing/in scope, whether it needs special run flags or instrumentation, and how to design a self-checkable test point. |
 | hyptest-workflow | Only when implementation is requested: duplicate check, profile/gate decision, write test_point/case, register, compile, run. |
@@ -200,7 +213,10 @@ Do not let script output become the final answer by itself. Script output is evi
 
 - Treat coverage as evidence, not as the test intent. A 0% file suggests a missing entry, but a high-quality test point must still name a cross execution scenario and an architectural observable: register/memory result, trap cause/tval, privilege/CSR state, vector result, or deterministic pass/fail behavior.
 - Respect the selected target exactly. If an uncovered path matches `scope_out`, mark it out of scope instead of proposing a test. If the target does not say whether a path is in scope, mark it `needs target decision`.
-- Do not edit `~/.bashrc`. If rerunning hyptest with a coverage Spike, use temporary environment variables in the command/process only.
+- Do not edit a user's `~/.bashrc` automatically. This skill exposes a stable
+  environment-variable interface; users may put those exports in their own
+  shell profile, and the skill/scripts should reference the variables instead
+  of embedding private absolute paths.
 - When a proposed point requires special Spike runtime options, label it `manual/special-run` instead of pretending it is a normal default gate.
 - If the target has `special_run_scope`, `manual_only_dimensions`, or `dimension_metadata`, apply those before suggesting a default gate.
 - Treat `dimension_gate.manual_only` or `default_gate_allowed: false` from script output as a hard downgrade to `manual/special-run` unless the user explicitly changes the target/profile decision.
@@ -219,17 +235,33 @@ Do not let script output become the final answer by itself. Script output is evi
 
 ## Inputs To Locate
 
-Prefer explicit paths from the user. Otherwise look for these common paths on this machine:
+Prefer the shared environment-variable interface. Do not assume the author's
+private workspace paths. Users are expected to set these variables in their
+shell profile, such as `~/.bashrc`, and skill examples should reference the
+variables instead of hardcoding absolute paths.
 
 ```text
-Spike coverage repo     /nfs/home/wuyuanlong/workspace/offical-spike-coverage
-Spike build dir         <spike_cov_repo>/build-cov
-Coverage docs           <spike_cov_repo>/cov_doc
-Raw gcov summaries      <spike_cov_repo>/cov_doc/gcov_raw/*.txt
-Hyptest repo            /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1
-Coverage Spike binary   <spike_cov_repo>/build-cov/spike
-Skill targets           /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/*.json
+Required minimum for normal layout:
+  HYPTEST_SPIKE_COV  Spike coverage repo root
+  HYPTEST_HOME       Hyptest repo root
+
+Derived defaults:
+  SPIKE_BUILD_DIR   $HYPTEST_SPIKE_COV/build
+  SPIKE_GCOV_RAW    $HYPTEST_SPIKE_COV/cov_doc/gcov_raw
+  SPIKE_SOURCE_ROOT $HYPTEST_SPIKE_COV
+  HYPTEST_ELF_DIR   $HYPTEST_HOME/case_elf_asm/spike
+  HYPTEST_SPIKE_COV_BIN $HYPTEST_SPIKE_COV/build/spike
+
+Optional overrides for non-standard layouts:
+  SPIKE_BUILD_DIR, SPIKE_GCOV_RAW, SPIKE_SOURCE_ROOT,
+  HYPTEST_ELF_DIR, HYPTEST_SPIKE_COV_BIN
 ```
+
+Do not define a generic default for `SPIKE_COV_SUMMARY`: a summary file is
+target/module-specific evidence, not a portable repo-level interface. If the
+user provides `SPIKE_COV_SUMMARY`, treat it as a user-selected input for the
+current analysis only. Otherwise choose or ask for the concrete summary file
+based on the selected target and run.
 
 If the user provides different paths, use those.
 
@@ -238,26 +270,43 @@ If the user provides different paths, use those.
 1. **Select or create target**
    - If the user gives a target file, use it.
    - If the user names an existing target, use `targets/<name>.json`.
-   - If no target exists, create one from `targets/TEMPLATE.json` and fill `spec`, `scope_in`, `scope_out`, and `dimensions` from the user’s purpose.
-   - Read `analysis_notes` and `duplicate_search_terms` from the target; do not look for target-specific spec in `SKILL.md`.
+   - Read the target's `project_spec`; if it is missing or invalid, fix/create the project spec before analyzing.
+   - If no target exists, create one from `targets/TEMPLATE.json` and fill `project_spec`, `coverage_focus`, `scope_in`, `scope_out`, and `dimensions` from the user’s purpose.
+   - Read `analysis_notes` and `duplicate_search_terms` from the target; read project implementation details from `specs/*.json`, not from `SKILL.md`.
    - If the user has not provided enough detail to fill a safe target, ask for the missing target decision before analyzing.
    - After creating or editing a target, run `scripts/validate_target.py <target.json>` and fix errors before analysis.
 
 2. **Collect coverage artifacts**
    - Prefer existing summaries under `cov_doc/gcov_raw/*.txt`.
    - Prefer existing `.gcov` files under `cov_doc/gcov_raw/` or other coverage output dirs for line-level inspection.
-   - If no useful summary exists but `build-cov/*.gcno` and `*.gcda` exist, run `gcov -b -c -o <build-dir> <files...>` and save output under a coverage doc/raw directory.
+   - Do not guess a target-specific summary filename from environment defaults.
+     If the user did not provide a summary path, choose from actual files only
+     when the selected target/run makes it unambiguous; otherwise ask for the
+     concrete `summary.txt` input or generate a new summary from coverage data.
+   - If no useful summary exists but the coverage build has `*.gcno` and `*.gcda`, run `gcov -b -c -o <build-dir> <files...>` and save output under a coverage doc/raw directory.
    - If `gcovr` is broken or unavailable, use system `gcov`. State that choice.
-   - When rerunning hyptest with a coverage Spike, set `HYPTEST_SPIKE_BIN` only for that process. If a wrapper invokes `bash -lc` and shell startup files override it, use a temporary process environment rather than editing `.bashrc`.
+   - Do not mix the coverage Spike with hyptest compile/default-run Spike. The
+     coverage matrix consumes existing ELF files from `HYPTEST_ELF_DIR` and runs
+     them directly with `HYPTEST_SPIKE_COV_BIN` (default
+     `$HYPTEST_SPIKE_COV/build/spike`); hyptest compilation and ordinary
+     `HYPTEST_SPIKE_BIN` usage belong to `hyptest-workflow`.
+   - `run_case_coverage_matrix.py` must not carry a script-owned hidden
+     ISA/profile. When `--command-template` is omitted, it reads the selected
+     target's project spec `coverage_spike.default_args` and builds
+     `{spike_bin} <spec args> {elf}`. For NanHu-V5.1 AP this supplies the
+     project-owned `--isa=...` and `--priv=MSU` automatically. Pass an explicit
+     `--command-template` only for a special run that needs to override the
+     project default, such as adding commit logs or trying a temporary Spike
+     flag.
 
 3. **Parse coverage robustly**
    - Track each `File '...'` block independently.
    - Stop associating totals with a file once `Creating 'x.gcov'` or `Removing 'x.gcov'` appears; gcov may print a final total line that otherwise contaminates the last file.
    - Record line, branch, call coverage separately.
-   - Filter using the target file only. Do not add hidden exclusions in the script.
+   - Filter using explicit config only: target rules plus project spec `NO`-feature rules. Do not add hidden exclusions in the script.
 
 4. **Rank coverage evidence**
-   - First pass: use `scripts/analyze_spike_gcov.py --target <target.json> --top <N> --markdown-out <out>/summary.md --json-out <out>/summary.json`.
+   - First pass: use `scripts/analyze_spike_gcov.py --summary <summary.txt> --target <target.json> --top <N> --markdown-out <out>/summary.md --json-out <out>/summary.json`.
    - Treat the score as a triage hint only. It is based on 0% entries and low line/branch/call coverage; it is not a semantic test quality score.
    - Read `evidence_class`, `evidence_class_reason`, `classification_confidence`, `entry_selection_reason`, and `dimension_gate`. Prefer `shared-path` when the user's goal is semantic/path coverage. Treat `mixed` as "entry evidence that needs shared source review"; treat `entry` as profile-gated entry evidence until source review shows value.
    - Do not turn this ranking directly into test points without source/gcov inspection and agent reasoning.
@@ -331,8 +380,9 @@ Use this structure by default:
 ## 覆盖率输入
 - Spike repo:
 - coverage summary:
+- project spec:
 - target file:
-- target spec/profile:
+- coverage focus/profile:
 - target scope:
 - target exclusions:
 

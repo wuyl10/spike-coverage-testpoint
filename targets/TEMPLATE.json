@@ -2,13 +2,14 @@
   "name": "fill_me",
   "title": "Human-readable target name",
   "description": "What this coverage analysis is trying to measure.",
-  "spec": {
+  "project_spec": "specs/nanhu_v5_1_ap.json",
+  "coverage_focus": {
     "profile": "fill_me",
-    "source_of_truth": "Where the spec/scope decision comes from.",
-    "included_extensions_or_features": [],
-    "excluded_extensions_or_features": [],
+    "purpose": "Which concrete coverage slice under project_spec this target analyzes.",
+    "included_features": [],
+    "excluded_features": [],
     "notes": [
-      "Keep target-specific spec assumptions here, not in SKILL.md or scripts."
+      "Keep target-specific coverage-slice decisions here. Keep project implementation details in specs/*.json."
     ]
   },
   "scope_in": [
@@ -49,7 +50,7 @@
   },
   "analysis_notes": [
     "Optional notes for the agent about how to interpret coverage evidence for this target.",
-    "Keep target-specific spec assumptions here."
+    "Keep target-specific coverage-slice assumptions here."
   ],
   "scenario_coverage": {
     "purpose": "Optional target-owned guidance for architecture-visible cross execution scenario coverage. Use these fields as a reporting checklist, not as a Cartesian product to enumerate blindly.",
@@ -131,7 +132,7 @@
     ],
     "example glob group": [
       "amoadd_w.h.gcov",
-      "amocas_w.h.gcov"
+      "amoswap_w.h.gcov"
     ]
   },
   "duplicate_search_terms": {},

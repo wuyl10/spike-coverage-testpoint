@@ -19,6 +19,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
+from target_config import load_target_with_project_spec, merged_regex_list
+
 
 @dataclass
 class Entry:
@@ -61,7 +63,10 @@ class Target:
     name: str
     title: str
     description: str
-    spec: dict[str, Any]
+    project_spec: str
+    project_spec_path: str | None
+    project_spec_data: dict[str, Any]
+    coverage_focus: dict[str, Any]
     scope_in: list[str]
     scope_out: list[str]
     summary_include_regex: list[str]
@@ -137,7 +142,7 @@ def as_thresholds(value: object, field: str) -> dict[str, float]:
 
 
 def load_target(path: Path) -> Target:
-    data = json.loads(path.read_text(errors="replace"))
+    data, project_spec, project_spec_path, project_spec_data = load_target_with_project_spec(path)
     dimensions_raw = data.get("dimensions", {})
     if not isinstance(dimensions_raw, dict):
         raise TypeError("target field 'dimensions' must be an object")
@@ -153,7 +158,10 @@ def load_target(path: Path) -> Target:
         name=str(data.get("name") or path.stem),
         title=str(data.get("title") or data.get("name") or path.stem),
         description=str(data.get("description") or ""),
-        spec=as_object(data.get("spec"), "spec"),
+        project_spec=project_spec,
+        project_spec_path=str(project_spec_path),
+        project_spec_data=project_spec_data,
+        coverage_focus=as_object(data.get("coverage_focus"), "coverage_focus"),
         scope_in=as_str_list(data.get("scope_in"), "scope_in"),
         scope_out=as_str_list(data.get("scope_out"), "scope_out"),
         summary_include_regex=as_str_list(
@@ -164,14 +172,8 @@ def load_target(path: Path) -> Target:
             data.get("summary_exclude_prefixes"),
             "summary_exclude_prefixes",
         ),
-        summary_exclude_regex=as_str_list(
-            data.get("summary_exclude_regex"),
-            "summary_exclude_regex",
-        ),
-        line_exclude_regex=as_str_list(
-            data.get("line_exclude_regex"),
-            "line_exclude_regex",
-        ),
+        summary_exclude_regex=merged_regex_list(data, project_spec_data, "summary_exclude_regex"),
+        line_exclude_regex=merged_regex_list(data, project_spec_data, "line_exclude_regex"),
         dimensions=dimensions,
         analysis_notes=as_str_list(data.get("analysis_notes"), "analysis_notes"),
         duplicate_search_terms=as_str_list_map(
@@ -766,15 +768,23 @@ def print_markdown(summary: dict, top: int, detail_limit: int) -> None:
         print(f"- target 文件: `{target['path']}`")
     if target["description"]:
         print(f"- description: {target['description']}")
-    if target["spec"].get("profile"):
-        print(f"- spec profile: {target['spec']['profile']}")
+    if target.get("project_spec"):
+        print(f"- project_spec: `{target['project_spec']}`")
+    if target.get("project_spec_path"):
+        print(f"- project spec 文件: `{target['project_spec_path']}`")
+    if target.get("coverage_focus", {}).get("profile"):
+        print(f"- coverage focus profile: {target['coverage_focus']['profile']}")
+    if target.get("coverage_focus", {}).get("included_features"):
+        print(f"- coverage focus included: {'; '.join(target['coverage_focus']['included_features'])}")
+    if target.get("coverage_focus", {}).get("excluded_features"):
+        print(f"- coverage focus excluded: {'; '.join(target['coverage_focus']['excluded_features'])}")
     if target["scope_in"]:
         print(f"- scope_in: {'; '.join(target['scope_in'])}")
     if target["scope_out"]:
         print(f"- scope_out: {'; '.join(target['scope_out'])}")
     if target["summary_exclude_prefixes"] or target["summary_exclude_regex"]:
         filters = target["summary_exclude_prefixes"] + target["summary_exclude_regex"]
-        print(f"- summary 排除规则: {'; '.join(filters)}")
+        print(f"- summary 排除规则(target + project_spec NO features): {'; '.join(filters)}")
     if target["source_priority"]:
         print(f"- source 优先级: {'; '.join(target['source_priority'])}")
     if target.get("scenario_coverage"):

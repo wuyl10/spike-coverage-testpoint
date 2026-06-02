@@ -12,12 +12,13 @@
 ## 目录
 
 - `SKILL.md`: Codex skill 主说明。
-- `targets/`: 覆盖率分析目标配置。具体规格、范围和排除项放这里。
+- `specs/`: 当前项目实现配置，例如 coverage Spike runner、环境变量接口、源码/覆盖率证据来源。
+- `targets/`: 覆盖率分析目标配置。具体看哪块覆盖率、范围、排除项和维度放这里。
 - `scripts/analyze_spike_gcov.py`: 解析 `gcov -b -c` summary，按 target 维度排序支撑证据缺口，并标出 `entry` / `shared-path` / `mixed` 证据类型。
 - `scripts/inspect_gcov_lines.py`: 精查 `.gcov`，提取 `#####`、未执行 branch/call、源码上下文，并报告被过滤掉的函数/事件数量。
 - `scripts/build_handoff_packet.py`: 根据 summary/line JSON 生成 hyptest-workflow 交接包骨架，包含 profile/gate 待确认字段。
 - `scripts/compare_gcov_snapshots.py`: 比较单 case 前后 `.gcov` 快照，报告函数上下文、计数增加、计数下降、counter 格式、before/after 缺失文件和缺失事件。
-- `scripts/run_case_coverage_matrix.py`: 按 `get_result.py` 类似方式选 ELF，一条条跑 coverage Spike，给每个 case 生成 before/after `.gcov`、compare 结果和最终矩阵报告。
+- `scripts/run_case_coverage_matrix.py`: 从 hyptest 已生成的 ELF 里选 case，但不调用 hyptest 编译或普通 Spike runner；它直接用 coverage Spike 一条条跑 ELF，给每个 case 生成 before/after `.gcov`、compare 结果和最终矩阵报告。
 - `scripts/analyze_path_markers.py`: 解析 coverage Spike path-marker 日志，报告 marker 序列是否出现；带 pc+insn、seq 或 access_id 的 JSONL 是强相关证据，弱 JSON/text fallback 会降级。
 - `scripts/check_handoff_final.py`: 检查报告/交接包里是否残留裸 `TODO(agent)`，也可用 strict 模式检查 handoff 字段完整性。
 - `scripts/run_smoke_tests.sh`: 改 skill 后的脚本级回归 smoke。
@@ -52,6 +53,7 @@
 
 ```text
 用 spike-coverage-testpoint 分析 Spike 覆盖率。
+项目实现：<使用哪个 specs/*.json；通常由 target.project_spec 指向>。
 目标：<使用哪个 targets/*.json；如果没有就从 targets/TEMPLATE.json 新建>。
 覆盖率输入：<gcov summary / .gcov 目录 / coverage HTML 路径>。
 范围：<只看哪些模块/维度/文件/函数；要排除什么>。
@@ -63,8 +65,9 @@
 
 ```text
 用 spike-coverage-testpoint 分析 Spike 覆盖率。
-目标用 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/memblock_non_h.json。
-coverage summary 用 /nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/gcov_raw/gcov_memblock_non_h_summary.txt。
+目标用 targets/memblock_non_h.json。
+coverage repo 和 hyptest repo 已在 bashrc 里通过 `$HYPTEST_SPIKE_COV`、`$HYPTEST_HOME` 配好。
+覆盖率输入：$HYPTEST_SPIKE_COV/cov_doc/gcov_raw/<明确的 memblock summary 文件>.txt，以及对应 .gcov 目录。
 只要测试点规划，不要写 case。
 重点看哪些 MemBlock cross 执行场景没有覆盖到；代码、函数、分支、call 只作为支撑证据，并给出值得补的高质量 hyptest 测试点。
 ```
@@ -73,14 +76,16 @@ coverage summary 用 /nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_d
 
 ```text
 用 spike-coverage-testpoint 看 MemBlock non-H 覆盖率里 vector whole/mask 和 vector indexed 的缺口。
+覆盖率输入：<明确的 summary.txt> 和 <对应 .gcov 目录>。
 请读取 summary 和对应 .gcov，说明哪些 entry/branch/call 没覆盖，
 再判断缺的是哪些 cross 执行场景、应该补哪些测试点、observable 是什么、是否需要特殊 profile。
 不要写 case。
 ```
 
 ```text
-用 spike-coverage-testpoint 只分析 AMO/AMOCAS 覆盖率缺口。
-要区分 entry 覆盖和 MMU.amo / amo_compare_and_swap 语义覆盖。
+用 spike-coverage-testpoint 只分析 AP 支持的 AMO/LR/SC 覆盖率缺口，不包含 Zacas/AMOCAS。
+覆盖率输入：<明确的 summary.txt> 和 <对应 .gcov 目录>。
+要区分 entry 覆盖和 MMU.amo / LR/SC reservation 语义覆盖；Zacas/AMOCAS 在 NanHu-V5.1 AP spec 中是 NO，不能当作 in-scope 缺口。
 最后给 hyptest-workflow handoff packet。
 ```
 
@@ -88,8 +93,10 @@ coverage summary 用 /nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_d
 
 ```text
 我要分析 Spike frontend 覆盖率，不是 MemBlock。
+项目实现继续用 specs/nanhu_v5_1_ap.json。
 请从 targets/TEMPLATE.json 新建一个 target，
-把我要测的 scope/spec/exclusion/dimensions 都放 target 文件里，
+把我要测的 coverage_focus/scope/exclusion/dimensions 都放 target 文件里，
+不要把 coverage Spike runner、环境变量、源码根目录这些项目实现信息塞进 target，
 不要写死进 SKILL.md 或脚本。
 先只建 target 并解释怎么用，不要分析覆盖率。
 ```
@@ -133,8 +140,7 @@ after gcov 目录：<after_gcov_dir>。
 ```text
 用 spike-coverage-testpoint 一条条跑 MemBlock non-H 的 coverage Spike 覆盖率。
 目标用 targets/memblock_non_h.json。
-coverage Spike 用 /nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov/spike。
-hyptest repo 用 /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1。
+coverage repo 和 hyptest repo 已在 bashrc 里通过 `$HYPTEST_SPIKE_COV`、`$HYPTEST_HOME` 配好。
 先跑 case_elf_asm/spike 里前 20 个 ELF，每个 case 独立 reset gcda、生成 before/after gcov、compare，并输出最终 summary。
 跑完后请 agent 根据报告分析哪些 case 对目标路径有增量、哪些证据还不够，不要直接写 case。
 ```
@@ -144,8 +150,7 @@ hyptest repo 用 /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1。
 ```text
 用 spike-coverage-testpoint 跑完 MemBlock non-H 全部 Spike ELF。
 目标用 targets/memblock_non_h.json。
-coverage Spike 用 /nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov/spike。
-hyptest repo 用 /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1。
+coverage repo 和 hyptest repo 已在 bashrc 里通过 `$HYPTEST_SPIKE_COV`、`$HYPTEST_HOME` 配好。
 请顺序逐条跑 case_elf_asm/spike 下所有 mapped ELF，每个 case 独立 reset gcda、生成 before/after gcov、compare，输出 summary.md/summary.json。
 跑完后请根据 summary.json、top still-zero、entry/header movement、runner issues、scope warnings 和 Spike 源码，归纳还需要补哪些高价值测试场景/测试点。
 只做测试点规划和 hyptest-workflow handoff，不要直接写 case。
@@ -197,10 +202,10 @@ ai_xxx、ai_yyy、ai_zzz。
 
 ```text
 正式 md 报告：
-/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/reports/<target_name>/<run_tag>/
+$HYPTEST_SPIKE_COV/cov_doc/reports/<target_name>/<run_tag>/
 
 正式运行证据：
-/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_runs/<target_name>/<run_tag>/
+$HYPTEST_SPIKE_COV/cov_runs/<target_name>/<run_tag>/
 
 临时试跑：
 /tmp/spike_cov_<target_name>_<purpose>/
@@ -266,11 +271,40 @@ cov_runs/<target>/<run_tag>/          原始证据，追溯时看
 ## 高级：手动跑脚本
 
 通常不需要用户手动跑脚本，直接 prompt Codex 即可。需要复现或调试时可以这样跑。
-如果不是临时试跑，先设定正式报告和运行证据目录：
+先让使用者在自己的 `~/.bashrc` 里设置环境变量；skill 和脚本只引用这些变量，不写个人 workspace 绝对路径：
 
 ```bash
-REPORT_DIR=/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/reports/memblock_non_h/20260521_current
-RUN_DIR=/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_runs/memblock_non_h/20260521_current
+export HYPTEST_SPIKE_COV=/path/to/spike-coverage
+export HYPTEST_HOME=/path/to/riscv-hyp-tests
+```
+
+默认布局下只需要这两个变量。脚本会自动推导：
+
+```text
+SPIKE_BUILD_DIR=$HYPTEST_SPIKE_COV/build
+SPIKE_GCOV_RAW=$HYPTEST_SPIKE_COV/cov_doc/gcov_raw
+SPIKE_SOURCE_ROOT=$HYPTEST_SPIKE_COV
+HYPTEST_ELF_DIR=$HYPTEST_HOME/case_elf_asm/spike
+HYPTEST_SPIKE_COV_BIN=$HYPTEST_SPIKE_COV/build/spike
+```
+
+这里的 `HYPTEST_SPIKE_COV_BIN` 是 coverage skill 专用的 Spike，不是 hyptest 里编译/普通自检用的 `HYPTEST_SPIKE_BIN`。coverage matrix 只消费 `case_elf_asm/spike` 里已经存在的 ELF，不负责编译 hyptest case，也不调用 hyptest 的普通 Spike 命令。默认 runner 参数来自所选 target 引用的 `specs/*.json`：脚本读取 `coverage_spike.default_args` 后生成 `{spike_bin} <spec args> {elf}`。例如 `targets/memblock_non_h.json` 引到 `specs/nanhu_v5_1_ap.json`，默认会自动带 NanHu-V5.1 AP 的 `--isa=...` 和 `--priv=MSU`，不需要每次手写。只有临时特殊实验需要覆盖项目默认 runner 时，才传 `--command-template`。
+
+summary 文件不做通用默认，因为它和 target/模块绑定。跑 summary 分析时显式传 `--summary <具体 summary.txt>`；如果某个人固定只分析一个目标，也可以在自己的 shell 里临时设 `SPIKE_COV_SUMMARY`，但 skill 不把它当成必需接口。
+
+只有目录布局不标准时，再在 `~/.bashrc` 里覆盖对应变量，例如 `SPIKE_BUILD_DIR`、`SPIKE_GCOV_RAW`、`SPIKE_SOURCE_ROOT`、`HYPTEST_ELF_DIR` 或 `HYPTEST_SPIKE_COV_BIN`。
+
+配置后可先自检解析结果：
+
+```bash
+python3 scripts/run_case_coverage_matrix.py --check-env
+```
+
+如果不是临时试跑，再设定正式报告和运行证据目录：
+
+```bash
+REPORT_DIR="$HYPTEST_SPIKE_COV/cov_doc/reports/memblock_non_h/20260521_current"
+RUN_DIR="$HYPTEST_SPIKE_COV/cov_runs/memblock_non_h/20260521_current"
 mkdir -p "$REPORT_DIR" "$RUN_DIR"
 ```
 
@@ -283,8 +317,9 @@ python3 scripts/validate_target.py targets/memblock_non_h.json
 跑 summary：
 
 ```bash
+SUMMARY="$HYPTEST_SPIKE_COV/cov_doc/gcov_raw/<summary-file>.txt"
 python3 scripts/analyze_spike_gcov.py \
-  --summary /nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/gcov_raw/gcov_memblock_non_h_summary.txt \
+  --summary "$SUMMARY" \
   --target targets/memblock_non_h.json \
   --top 18 \
   --json-out "$RUN_DIR/summary.json" \
@@ -295,8 +330,8 @@ python3 scripts/analyze_spike_gcov.py \
 
 ```bash
 python3 scripts/inspect_gcov_lines.py \
-  --gcov-dir /nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/gcov_raw \
-  --source-root /nfs/home/wuyuanlong/workspace/offical-spike-coverage \
+  --gcov-dir "${SPIKE_GCOV_RAW:-$HYPTEST_SPIKE_COV/cov_doc/gcov_raw}" \
+  --source-root "${SPIKE_SOURCE_ROOT:-$HYPTEST_SPIKE_COV}" \
   --target targets/memblock_non_h.json \
   --file mmu.cc.gcov \
   --file mmu.h.gcov \
@@ -346,12 +381,8 @@ python3 scripts/compare_gcov_snapshots.py \
 一键逐条跑 ELF 并生成最终 coverage matrix：
 
 ```bash
-HYPTEST_SPIKE_BIN=/nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov/spike \
 python3 scripts/run_case_coverage_matrix.py \
-  --hyptest-repo /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1 \
   --target targets/memblock_non_h.json \
-  --build-dir /nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov \
-  --elf-dir /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1/case_elf_asm/spike \
   --all-elves \
   --limit 20 \
   --gcno-from-target \
@@ -361,12 +392,8 @@ python3 scripts/run_case_coverage_matrix.py \
 全量跑完所有 mapped ELF：
 
 ```bash
-HYPTEST_SPIKE_BIN=/nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov/spike \
 python3 scripts/run_case_coverage_matrix.py \
-  --hyptest-repo /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1 \
   --target targets/memblock_non_h.json \
-  --build-dir /nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov \
-  --elf-dir /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1/case_elf_asm/spike \
   --all-elves \
   --gcno-from-target \
   --out-dir "$RUN_DIR/case_matrix_all"
@@ -375,12 +402,8 @@ python3 scripts/run_case_coverage_matrix.py \
 只跑名字像 MemBlock/访存相关的 ELF，适合先收一版更聚焦的证据：
 
 ```bash
-HYPTEST_SPIKE_BIN=/nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov/spike \
 python3 scripts/run_case_coverage_matrix.py \
-  --hyptest-repo /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1 \
   --target targets/memblock_non_h.json \
-  --build-dir /nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov \
-  --elf-dir /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1/case_elf_asm/spike \
   --all-elves \
   --case-regex 'memblock|pbmt|pte|pmp|pma|amo|lr|sc|load|store|vector|trigger|fault|unaligned|misalign' \
   --gcno-from-target \
@@ -390,11 +413,8 @@ python3 scripts/run_case_coverage_matrix.py \
 只跑指定 case：
 
 ```bash
-HYPTEST_SPIKE_BIN=/nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov/spike \
 python3 scripts/run_case_coverage_matrix.py \
-  --hyptest-repo /nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1 \
   --target targets/memblock_non_h.json \
-  --build-dir /nfs/home/wuyuanlong/workspace/offical-spike-coverage/build-cov \
   --case ai_case_a \
   --case ai_case_b \
   --gcno-from-target \
@@ -409,8 +429,9 @@ python3 scripts/run_case_coverage_matrix.py \
 - `--dimension vector`: 只用 target 里名称包含 `vector` 的 inspection hints 解析 `.gcno`。
 - `--requirements-json req.json` / `--requirements-dir dir`: 给 compare 加 must-pass line/branch/call 证据点。
 - `--reset-scope selected|all|none`: 每个 case 前删除哪些 `.gcda` counter；默认 `selected`。
+- `--check-env`: 打印当前 `HYPTEST_HOME`、`HYPTEST_SPIKE_COV` 和推导出的 build/raw-gcov/source-root/ELF/coverage-Spike 路径后退出，适合第一次配置后自检。
 - `--dry-run`: 只看会选哪些 case 和 `.gcno`，不运行。
-- `--command-template`: 支持 `{spike_bin}`、`{elf}`、`{case_name}`、`{run_name}`、`{case_dir}` 等占位符；需要 Spike commit/log 证据时可把 `--log={case_dir}/spike.log` 写进去。默认模板直接执行 `{spike_bin}`，不经过 `bash -lc`，避免 login shell 覆盖临时 `HYPTEST_SPIKE_BIN`。
+- `--command-template`: 支持 `{spike_bin}`、`{elf}`、`{case_name}`、`{run_name}`、`{case_dir}` 等占位符；省略时使用 target 的 project spec `coverage_spike.default_args`，例如 `{spike_bin} --isa=<spec default_isa> --priv=MSU {elf}`。需要 Spike commit/log 证据时可显式覆盖成 `{spike_bin} --isa=<spec ISA> --priv=MSU -l --log-commits --log={case_dir}/spike.log {elf}`。显式传入后脚本完全按该模板执行。
 
 输出文件：
 
@@ -474,11 +495,18 @@ python3 scripts/analyze_path_markers.py \
 bash scripts/run_smoke_tests.sh
 ```
 
+默认 smoke 只用内置合成 fixture，不需要真实 coverage repo。需要顺手验证当前机器的真实 gcov 输入时，再打开外部 smoke：
+
+```bash
+HYPTEST_SPIKE_COV_EXTERNAL_SMOKE=1 bash scripts/run_smoke_tests.sh
+```
+
 ## 目标配置
 
 不要把具体规格写死在 `SKILL.md` 或脚本里。要换分析目标时，从 `targets/TEMPLATE.json` 复制一个新 target，填写：
 
-- `spec`
+- `project_spec`
+- `coverage_focus`
 - `scope_in`
 - `scope_out`
 - `dimensions`

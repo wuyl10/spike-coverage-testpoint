@@ -1,91 +1,97 @@
 {
   "name": "memblock_non_h",
   "title": "MemBlock non-H coverage target",
-  "description": "Analyze Spike MemBlock-related coverage while excluding H extension and virtualization/stage2 targets.",
-  "spec": {
+  "description": "Analyze Spike MemBlock-related coverage for NanHu-V5.1 AP while excluding H extension, stage2, and project-unsupported memory features.",
+  "project_spec": "specs/nanhu_v5_1_ap.json",
+  "coverage_focus": {
     "profile": "memblock_non_h",
-    "source_of_truth": "Target-scoped coverage planning for official/community Spike and hyptest test-point design.",
-    "included_extensions_or_features": [
+    "purpose": "Analyze the NanHu-V5.1 AP MemBlock-related coverage slice: RV64 non-H, stage1 translation, scalar/FP/vector memory, LR/SC, word/doubleword AMO, CBO/CMO, and Svinval/SFence invalidation paths.",
+    "included_features": [
       "integer scalar load/store",
-      "compressed memory instructions when present in Spike coverage",
-      "floating-point scalar load/store when present in Spike coverage",
-      "RISC-V vector load/store when present in Spike coverage",
-      "LR/SC and AMO/AMOCAS when present in Spike coverage",
-      "CBO/CMO when present in Spike coverage",
       "stage1 address translation",
       "PMP/PMA/PBMT",
       "trigger/debug paths involving memory access",
-      "MMIO/device paths involving memory access"
+      "MMIO/device paths involving memory access",
+      "RV64 compressed integer and F/D memory instructions supported by NanHu-V5.1 AP",
+      "F/D floating-point scalar load/store forms supported by NanHu-V5.1 AP",
+      "RISC-V vector load/store forms supported by NanHu-V5.1 AP",
+      "LR/SC and word/doubleword AMO forms supported by NanHu-V5.1 AP",
+      "Zicbom/Zicbop/Zicboz CBO/CMO forms supported by NanHu-V5.1 AP",
+      "Svinval/SFence stage1 invalidation paths",
+      "Svade A/D-bit behavior where source coverage exposes memory-visible paths"
     ],
-    "excluded_extensions_or_features": [
+    "excluded_features": [
       "H extension",
       "stage2 translation",
       "guest page faults",
-      "HS/VS/VU virtualization targets"
+      "HS/VS/VU virtualization targets",
+      "Zacas/AMOCAS",
+      "Zabha byte/halfword AMO",
+      "Zfh/Zfhmin/Zvfhmin/Zvh/Zfbfmin half-precision and BF16 memory forms",
+      "Q/quad-precision memory forms",
+      "Sv57 and Svnapot",
+      "AIA, SMEPMP, pointer masking, and RAS paths",
+      "RV32-only compressed floating memory forms such as c.flw/c.fsw",
+      "Zawrs wait-on-reservation instructions",
+      "Zicclsm misaligned-memory extension behavior as a positive in-scope feature",
+      "Svadu hardware A/D update behavior"
     ],
     "notes": [
-      "This target defines coverage-analysis scope only. hyptest implementation still needs hyptest-workflow profile checks before writing cases."
+      "This target defines the coverage slice only. The project implementation and coverage runner contract live in project_spec.",
+      "Project unsupported-feature filters are derived from specs/nanhu_v5_1_ap.json; keep target filters for target-specific scope only.",
+      "NanHu-V5.1 AP is treated as RV64 for this target, so RV32-only compressed floating memory entries are not in scope.",
+      "Zicclsm is NO in the project spec; misaligned-memory candidates are exception/priority/boundary checks, not positive Zicclsm behavior.",
+      "hyptest implementation still needs hyptest-workflow profile checks before writing cases."
     ]
   },
   "scope_in": [
     "scalar integer load/store",
-    "compressed memory instructions",
     "floating-point scalar load/store",
     "vector load/store",
     "LR/SC",
-    "AMO/AMOCAS",
+    "word/doubleword AMO",
     "CBO/CMO",
-    "fence/sfence",
     "stage1 translation",
     "TLB/PTE cache",
     "PMP/PMA/PBMT",
     "exception priority",
     "trigger/debug",
     "MMIO/device",
-    "memtracer/log paths"
+    "memtracer/log paths",
+    "RV64 compressed integer and F/D memory instructions",
+    "Svinval/SFence stage1 invalidation",
+    "Svade A/D-bit exception/permission behavior when memory-visible"
   ],
   "scope_out": [
     "H extension instruction entries such as HLV/HSV/HLVX",
     "HS/VS/VU virtualization mode test targets",
     "hgatp/vsatp/henvcfg control paths",
     "stage2 translation",
-    "guest page faults and trap_*_guest_page_fault targets"
+    "guest page faults and trap_*_guest_page_fault targets",
+    "Zacas/AMOCAS compare-and-swap targets",
+    "Zabha byte/halfword AMO targets",
+    "Zfh/Zfhmin/Zvfhmin/Zvh/Zfbfmin half-precision and BF16 memory targets",
+    "Q/quad-precision memory targets",
+    "Sv57 and Svnapot targets",
+    "AIA, SMEPMP, pointer masking, and RAS targets",
+    "RV32-only compressed floating memory entries such as c_flw/c_flwsp/c_fsw/c_fswsp",
+    "Zawrs wait-on-reservation instruction targets",
+    "Zicclsm positive misaligned-memory extension targets",
+    "Svadu hardware A/D update targets"
   ],
   "summary_include_regex": [
     "^riscv/"
   ],
-  "summary_exclude_prefixes": [
-    "hlv",
-    "hlvx",
-    "hsv"
-  ],
-  "summary_exclude_regex": [
-    "guest_page_fault",
-    "hgatp",
-    "vsatp",
-    "henvcfg",
-    "s2xlate"
-  ],
-  "line_exclude_regex": [
-    "s2xlate",
-    "hgatp",
-    "vsatp",
-    "henvcfg",
-    "\\bhstatus\\b",
-    "HSTATUS_",
-    "forced_virt",
-    "\\bhlv",
-    "\\bhsv",
-    "\\bhlvx",
-    "guest_page_fault",
-    "\\bguest\\b"
-  ],
+  "summary_exclude_prefixes": [],
+  "summary_exclude_regex": [],
+  "line_exclude_regex": [],
   "line_priority_regex": [
     "mmu_t::(load|store|fetch|translate|walk|refill|flush|check_triggers|pmp|pma|amo|load_reserved|store_conditional|register_memtracer|clean_inval|cbo)",
     "trigger.*(load|store|execute|match|timing|mcontrol|simple_match)",
     "\\b(load|store|fetch|amo|lr|sc|cbo|sfence|pmp|pma|pbmt|tlb|pte|misalign|access_fault|page_fault|mmio|memtracer|trace)\\b",
     "VI_(LD|ST|LDST|LD_WHOLE|ST_WHOLE|LD_INDEX|ST_INDEX)",
-    "vstart|mask|fault-only-first|whole|indexed|strided|reservation|compare_and_swap"
+    "vstart|mask|fault-only-first|whole|indexed|strided|reservation",
+    "\\b(sinval|sfence_w_inval|sfence_inval_ir|svinval|adue|pte_[ad]|dirty|accessed)\\b"
   ],
   "coverage_thresholds": {
     "low_line_pct": 20.0,
@@ -126,7 +132,10 @@
       "riscv/mmu.h",
       "riscv/csrs.cc",
       "riscv/bloom_filter.h",
-      "insn:sfence_vma"
+      "insn:sfence_vma",
+      "insn:sinval_vma",
+      "insn:sfence_w_inval",
+      "insn:sfence_inval_ir"
     ],
     "PMP/PMA/PBMT shared paths": [
       "riscv/mmu.cc",
@@ -197,24 +206,16 @@
       "insn:c_sdsp",
       "insn:c_sb",
       "insn:c_sh",
-      "insn:c_flw",
-      "insn:c_flwsp",
       "insn:c_fld",
       "insn:c_fldsp",
-      "insn:c_fsw",
-      "insn:c_fswsp",
       "insn:c_fsd",
       "insn:c_fsdsp"
     ],
     "FP scalar memory": [
-      "insn:flh",
       "insn:flw",
       "insn:fld",
-      "insn:flq",
-      "insn:fsh",
       "insn:fsw",
-      "insn:fsd",
-      "insn:fsq"
+      "insn:fsd"
     ],
     "vector unit-stride": [
       "insn:vle8_v",
@@ -292,51 +293,6 @@
       "insn:sc_w",
       "insn:sc_d"
     ],
-    "AMO/AMOCAS": [
-      "riscv/mmu.cc",
-      "riscv/mmu.h",
-      "insn:amoadd_b",
-      "insn:amoadd_h",
-      "insn:amoadd_w",
-      "insn:amoadd_d",
-      "insn:amoand_b",
-      "insn:amoand_h",
-      "insn:amoand_w",
-      "insn:amoand_d",
-      "insn:amomax_b",
-      "insn:amomax_h",
-      "insn:amomax_w",
-      "insn:amomax_d",
-      "insn:amomaxu_b",
-      "insn:amomaxu_h",
-      "insn:amomaxu_w",
-      "insn:amomaxu_d",
-      "insn:amomin_b",
-      "insn:amomin_h",
-      "insn:amomin_w",
-      "insn:amomin_d",
-      "insn:amominu_b",
-      "insn:amominu_h",
-      "insn:amominu_w",
-      "insn:amominu_d",
-      "insn:amoor_b",
-      "insn:amoor_h",
-      "insn:amoor_w",
-      "insn:amoor_d",
-      "insn:amoswap_b",
-      "insn:amoswap_h",
-      "insn:amoswap_w",
-      "insn:amoswap_d",
-      "insn:amoxor_b",
-      "insn:amoxor_h",
-      "insn:amoxor_w",
-      "insn:amoxor_d",
-      "insn:amocas_b",
-      "insn:amocas_h",
-      "insn:amocas_w",
-      "insn:amocas_d",
-      "insn:amocas_q"
-    ],
     "CBO/CMO": [
       "insn:cbo_clean",
       "insn:cbo_flush",
@@ -346,7 +302,32 @@
     "fence/sfence": [
       "insn:fence",
       "insn:fence_i",
-      "insn:sfence_vma"
+      "insn:sfence_vma",
+      "insn:sinval_vma",
+      "insn:sfence_w_inval",
+      "insn:sfence_inval_ir"
+    ],
+    "AMO": [
+      "riscv/mmu.cc",
+      "riscv/mmu.h",
+      "insn:amoadd_w",
+      "insn:amoadd_d",
+      "insn:amoand_w",
+      "insn:amoand_d",
+      "insn:amomax_w",
+      "insn:amomax_d",
+      "insn:amomaxu_w",
+      "insn:amomaxu_d",
+      "insn:amomin_w",
+      "insn:amomin_d",
+      "insn:amominu_w",
+      "insn:amominu_d",
+      "insn:amoor_w",
+      "insn:amoor_d",
+      "insn:amoswap_w",
+      "insn:amoswap_d",
+      "insn:amoxor_w",
+      "insn:amoxor_d"
     ]
   },
   "inspection_hints": {
@@ -366,7 +347,10 @@
       "mmu.h.gcov",
       "csrs.cc.gcov",
       "bloom_filter.h.gcov",
-      "sfence_vma.h.gcov"
+      "sfence_vma.h.gcov",
+      "sinval_vma.h.gcov",
+      "sfence_w_inval.h.gcov",
+      "sfence_inval_ir.h.gcov"
     ],
     "PMP/PMA/PBMT shared paths": [
       "mmu.cc.gcov",
@@ -420,7 +404,14 @@
       "c_lw.h.gcov",
       "c_ld.h.gcov",
       "c_sw.h.gcov",
-      "c_sd.h.gcov"
+      "c_sd.h.gcov",
+      "c_lbu.h.gcov",
+      "c_lh.h.gcov",
+      "c_lhu.h.gcov",
+      "c_sb.h.gcov",
+      "c_sh.h.gcov",
+      "c_fld.h.gcov",
+      "c_fsd.h.gcov"
     ],
     "FP scalar memory": [
       "mmu.cc.gcov",
@@ -473,51 +464,6 @@
       "sc_w.h.gcov",
       "sc_d.h.gcov"
     ],
-    "AMO/AMOCAS": [
-      "mmu.cc.gcov",
-      "mmu.h.gcov",
-      "amoadd_b.h.gcov",
-      "amoadd_h.h.gcov",
-      "amoadd_w.h.gcov",
-      "amoadd_d.h.gcov",
-      "amoand_b.h.gcov",
-      "amoand_h.h.gcov",
-      "amoand_w.h.gcov",
-      "amoand_d.h.gcov",
-      "amomax_b.h.gcov",
-      "amomax_h.h.gcov",
-      "amomax_w.h.gcov",
-      "amomax_d.h.gcov",
-      "amomaxu_b.h.gcov",
-      "amomaxu_h.h.gcov",
-      "amomaxu_w.h.gcov",
-      "amomaxu_d.h.gcov",
-      "amomin_b.h.gcov",
-      "amomin_h.h.gcov",
-      "amomin_w.h.gcov",
-      "amomin_d.h.gcov",
-      "amominu_b.h.gcov",
-      "amominu_h.h.gcov",
-      "amominu_w.h.gcov",
-      "amominu_d.h.gcov",
-      "amoor_b.h.gcov",
-      "amoor_h.h.gcov",
-      "amoor_w.h.gcov",
-      "amoor_d.h.gcov",
-      "amoswap_b.h.gcov",
-      "amoswap_h.h.gcov",
-      "amoswap_w.h.gcov",
-      "amoswap_d.h.gcov",
-      "amoxor_b.h.gcov",
-      "amoxor_h.h.gcov",
-      "amoxor_w.h.gcov",
-      "amoxor_d.h.gcov",
-      "amocas_b.h.gcov",
-      "amocas_h.h.gcov",
-      "amocas_w.h.gcov",
-      "amocas_d.h.gcov",
-      "amocas_q.h.gcov"
-    ],
     "CBO/CMO": [
       "mmu.cc.gcov",
       "mmu.h.gcov",
@@ -528,24 +474,52 @@
       "mmu.cc.gcov",
       "mmu.h.gcov",
       "sfence_vma.h.gcov",
-      "fence_i.h.gcov"
+      "fence_i.h.gcov",
+      "sinval_vma.h.gcov",
+      "sfence_w_inval.h.gcov",
+      "sfence_inval_ir.h.gcov"
+    ],
+    "AMO": [
+      "mmu.cc.gcov",
+      "mmu.h.gcov",
+      "amoadd_w.h.gcov",
+      "amoadd_d.h.gcov",
+      "amoand_w.h.gcov",
+      "amoand_d.h.gcov",
+      "amomax_w.h.gcov",
+      "amomax_d.h.gcov",
+      "amomaxu_w.h.gcov",
+      "amomaxu_d.h.gcov",
+      "amomin_w.h.gcov",
+      "amomin_d.h.gcov",
+      "amominu_w.h.gcov",
+      "amominu_d.h.gcov",
+      "amoor_w.h.gcov",
+      "amoor_d.h.gcov",
+      "amoswap_w.h.gcov",
+      "amoswap_d.h.gcov",
+      "amoxor_w.h.gcov",
+      "amoxor_d.h.gcov"
     ]
   },
   "analysis_notes": [
     "Prioritize branch/call gaps in shared paths such as riscv/mmu.cc, riscv/mmu.h, riscv/v_ext_macros.h, riscv/execute.cc, and riscv/triggers.cc over one-line instruction entry coverage.",
     "Treat scalar/vector/atomic/CBO entries as entry evidence first; inspect shared MMU/vector/trigger/fault paths before claiming semantic coverage.",
-    "High-value MemBlock candidates usually need an observable memory/register/trap/CSR/vector oracle and should exercise a reusable behavior class such as alignment, boundary split, fault conversion, PMP/PMA/PBMT, trigger timing, TLB/PTE cache refresh, vector mask/vstart/fault-only-first, LR/SC reservation, AMO/AMOCAS, or CBO gating.",
+    "High-value MemBlock candidates usually need an observable memory/register/trap/CSR/vector oracle and should exercise a reusable behavior class such as alignment, boundary split, fault conversion, PMP/PMA/PBMT, trigger timing, TLB/PTE cache refresh, vector mask/vstart/fault-only-first, LR/SC reservation, AMO, or CBO gating.",
     "For path-sensitive questions, do not claim a whole execution flow was covered just because each branch was covered in aggregate. Use single-case increment evidence or path markers; otherwise mark edge-covered-path-unknown.",
     "Mark memtracer/log/device-specific paths as manual/special-run unless the default hyptest platform can observe them deterministically.",
-    "Do duplicate search by semantic terms as well as mnemonics before proposing implementation."
+    "Do duplicate search by semantic terms as well as mnemonics before proposing implementation.",
+    "Apply the NanHu-V5.1 AP support matrix before proposing target gaps: Svinval/Svade/Svpbmt are in scope when memory-visible; Sv57/Svnapot/Svadu/H/Zacas/Zabha/Zfh/Q/Zawrs/Zicclsm-positive behavior are out of scope for this target.",
+    "For compressed memory, keep the RV64-supported C integer and F/D entries; do not treat RV32-only c.flw/c.fsw entries as missing AP coverage.",
+    "For misaligned-memory evidence, phrase candidates as trap priority, boundary split, or exception conversion behavior because Zicclsm is not supported by the project spec."
   ],
   "scenario_coverage": {
     "purpose": "Find missing MemBlock non-H cross execution scenarios, not line/branch/call coverage numbers as goals.",
     "scenario_axes": [
-      "instruction/access class: fetch, scalar load/store, FP memory, vector load/store, LR/SC, AMO/AMOCAS, CBO/CMO, fence/sfence",
+      "instruction/access class: fetch, scalar load/store, FP memory, vector load/store, LR/SC, AMO, CBO/CMO, fence/sfence/Svinval",
       "privilege/profile/gate: M/S/U, enabled ISA/profile feature, default vs manual/special-run gate",
       "address/translation/protection/device condition: bare/stage1 translation, TLB hit/miss/walk/refill/flush, alignment/boundary, PMP/PMA/PBMT, MMIO/device/responder",
-      "exception/fault/trigger/cache/vector/atomic subcondition: misaligned/page/access fault priority, trigger timing, cache error/NMI, vector mask/vstart/fault-only-first/indexed/whole, LR/SC reservation, AMOCAS compare success/fail",
+      "exception/fault/trigger/cache/vector/atomic subcondition: misaligned/page/access fault priority, trigger timing, cache error/NMI, vector mask/vstart/fault-only-first/indexed/whole, LR/SC reservation, AMO operation variant and aq/rl ordering",
       "architectural observable: register value, memory bytes, trap cause/tval, CSR state, vector element/mask result, deterministic device/manual-run evidence"
     ],
     "evidence_policy": [
@@ -553,15 +527,19 @@
       "Do not claim a MemBlock cross scenario is covered unless same-flow evidence ties instruction/access, translation/protection condition, subcondition, and observable together.",
       "Use shared-path evidence in mmu.cc/mmu.h/v_ext_macros.h/execute.cc/triggers.cc to turn entry gaps into scenario gaps.",
       "Derive scenario signatures from target scope, Spike source, .gcov, single-case deltas, or path-marker records; do not generate a blind Cartesian product.",
-      "Manual-only dimensions such as memtracer/log/device injection/cache error/NMI remain manual/special-run unless deterministic default-gate observability is proven."
+      "Manual-only dimensions such as memtracer/log/device injection/cache error/NMI remain manual/special-run unless deterministic default-gate observability is proven.",
+      "Apply project-spec support before interpreting an entry gap: unsupported or RV32-only entries are out-of-scope even when Spike emits coverage files.",
+      "Treat Svinval/SFence invalidation as stage1 translation/TLB coverage, not as a separate blind instruction checklist."
     ],
     "priority_scenarios": [
       "stage1 translation with TLB/PTE cache state and visible trap or memory result",
       "PMP/PMA/PBMT permission or memory-type decision on scalar/vector/atomic memory access",
       "vector indexed/whole/mask/fault-only-first memory access with mask/vstart/progress observable",
-      "LR/SC and AMO/AMOCAS reservation/compare/failure paths with memory/register observable",
+      "LR/SC and AMO reservation/compare/failure paths with memory/register observable",
       "trigger/debug timing on load/store/fetch with trap or CSR observable",
-      "MMIO/device/responder and cache-error/NMI paths when only manual/special-run evidence is possible"
+      "MMIO/device/responder and cache-error/NMI paths when only manual/special-run evidence is possible",
+      "Svinval/SFence invalidation followed by memory access with visible stale-vs-refreshed translation behavior",
+      "Svade A/D-bit disabled or permission behavior when source/gcov evidence exposes a memory-visible trap path"
     ]
   },
   "path_analysis": {
@@ -614,12 +592,11 @@
         ]
       },
       "mem.access.amo": {
-        "meaning": "AMO/LR/SC/AMOCAS entered the shared atomic memory flow.",
+        "meaning": "AMO/LR/SC entered the shared atomic memory flow.",
         "suggested_locations": [
           "riscv/mmu.h:mmu_t::amo",
           "riscv/mmu.h:mmu_t::load_reserved",
-          "riscv/mmu.h:mmu_t::store_conditional",
-          "riscv/mmu.h:mmu_t::amo_compare_and_swap"
+          "riscv/mmu.h:mmu_t::store_conditional"
         ]
       },
       "mem.translate.tlb_hit": {
@@ -693,6 +670,22 @@
         "suggested_locations": [
           "riscv/v_ext_macros.h:fault-only-first and vector fault handling"
         ]
+      },
+      "mem.translate.invalidate": {
+        "meaning": "Stage1 translation invalidation path executed before or during a memory-visible translation scenario.",
+        "suggested_locations": [
+          "riscv/insns/sinval_vma.h",
+          "riscv/insns/sfence_w_inval.h",
+          "riscv/insns/sfence_inval_ir.h",
+          "riscv/mmu.cc:flush/refill translation state"
+        ]
+      },
+      "mem.pte.ad_check": {
+        "meaning": "Memory translation path reached PTE accessed/dirty-bit decision or Svade-related trap behavior.",
+        "suggested_locations": [
+          "riscv/mmu.cc:walk A/D-bit checks",
+          "riscv/mmu.cc:page-fault decision for accessed/dirty bits"
+        ]
       }
     },
     "single_case_increment": {
@@ -731,7 +724,8 @@
       "cross page",
       "boundary",
       "address misaligned",
-      "partial fault"
+      "partial fault",
+      "Zicclsm not supported"
     ],
     "stage1 translation and TLB": [
       "sfence.vma",
@@ -741,7 +735,13 @@
       "stale",
       "TLB",
       "flush_tlb_ppn",
-      "bloom_filter"
+      "bloom_filter",
+      "sinval.vma",
+      "sfence.w.inval",
+      "sfence.inval.ir",
+      "Svinval",
+      "A/D bit",
+      "Svade"
     ],
     "PMP/PMA/PBMT shared paths": [
       "PMP",
@@ -809,17 +809,15 @@
       "c_sb",
       "c_sh",
       "c_fld",
-      "c_fsd"
+      "c_fsd",
+      "c_lhu",
+      "RV64 compressed memory"
     ],
     "FP scalar memory": [
-      "flh",
       "flw",
       "fld",
-      "flq",
-      "fsh",
       "fsw",
       "fsd",
-      "fsq",
       "FS dirty"
     ],
     "vector shared paths": [
@@ -891,25 +889,6 @@
       "duplicate index",
       "index EEW"
     ],
-    "AMO/AMOCAS": [
-      "amoadd",
-      "amoswap",
-      "amoor",
-      "amoand",
-      "amoxor",
-      "amomax",
-      "amomin",
-      "amomaxu",
-      "amominu",
-      "amocas",
-      "compare and swap",
-      "CAS",
-      "equal",
-      "not equal",
-      "Zacas",
-      "aq",
-      "rl"
-    ],
     "LR/SC": [
       "lr.w",
       "lr.d",
@@ -934,7 +913,11 @@
       "sfence.vma",
       "TLB flush",
       "instruction cache",
-      "memory ordering"
+      "memory ordering",
+      "sinval.vma",
+      "sfence.w.inval",
+      "sfence.inval.ir",
+      "Svinval"
     ],
     "exception priority": [
       "exception priority",
@@ -944,6 +927,21 @@
       "address misaligned",
       "mtval",
       "stval"
+    ],
+    "AMO": [
+      "amoadd",
+      "amoswap",
+      "amoor",
+      "amoand",
+      "amoxor",
+      "amomax",
+      "amomin",
+      "amomaxu",
+      "amominu",
+      "aq",
+      "rl",
+      "word AMO",
+      "doubleword AMO"
     ]
   },
   "duplicate_search_aliases": {
@@ -951,7 +949,9 @@
       "alignment/boundary"
     ],
     "stage1 translation and TLB": [
-      "TLB/PTE cache"
+      "TLB/PTE cache",
+      "Svinval",
+      "Svade A/D"
     ],
     "PMP/PMA/PBMT shared paths": [
       "PMP partial",
@@ -963,8 +963,14 @@
     "memtracer/log paths": [
       "memtracer/log"
     ],
-    "AMO/AMOCAS": [
-      "AMOCAS"
+    "fence/sfence": [
+      "Svinval/SFence"
+    ],
+    "compressed memory": [
+      "RV64 compressed memory"
+    ],
+    "AMO": [
+      "word/doubleword AMO"
     ]
   },
   "handoff_defaults": {

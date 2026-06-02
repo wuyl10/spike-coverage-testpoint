@@ -19,6 +19,8 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Iterable
 
+from target_config import load_target_with_project_spec, merged_regex_list, read_str_list
+
 
 @dataclass
 class MissEvent:
@@ -314,22 +316,11 @@ def apply_exclude_regex(report: FileReport, patterns: list[re.Pattern[str]], mer
 def load_target_line_rules(path: Path | None) -> tuple[list[str], list[str]]:
     if path is None:
         return [], []
-    data = json.loads(path.read_text(errors="replace"))
+    data, _project_spec, _project_spec_path, project_spec_data = load_target_with_project_spec(path)
     return (
-        read_regex_list(data, "line_exclude_regex"),
-        read_regex_list(data, "line_priority_regex"),
+        merged_regex_list(data, project_spec_data, "line_exclude_regex"),
+        read_str_list(data, "line_priority_regex"),
     )
-
-
-def read_regex_list(data: dict, field: str) -> list[str]:
-    patterns = data.get(field, [])
-    if patterns is None:
-        return []
-    if isinstance(patterns, str):
-        return [patterns]
-    if isinstance(patterns, list) and all(isinstance(item, str) for item in patterns):
-        return patterns
-    raise TypeError(f"target field '{field}' must be a string or list of strings")
 
 
 def load_source_context(source_root: Path | None, source: str | None, line_no: int, context: int) -> list[tuple[int, str]]:

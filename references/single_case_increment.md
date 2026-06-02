@@ -65,21 +65,23 @@ For branch/call increment checks, generate `.gcov` with numeric counts:
 gcov -b -c -o /path/to/build-dir /path/to/source.cc
 ```
 
-4. Run one tiny case.
+4. Run one tiny case with the coverage Spike.
 
 Prefer a case with one target memory/vector/atomic instruction plus minimal
-setup and checks. Use a temporary environment variable when hyptest invokes
-Spike:
+setup and checks. Do not reuse hyptest's normal Spike runner for this coverage
+step. Hyptest should compile/generate the ELF beforehand; this step consumes the
+existing ELF and runs it directly with the coverage Spike:
 
 ```bash
-HYPTEST_SPIKE_BIN=/path/to/build-cov/spike \
-python3 get_result.py --platform spike --elf-path /path/to/case.ELF --jobs 1
+${HYPTEST_SPIKE_COV_BIN:-$HYPTEST_SPIKE_COV/build/spike} /path/to/case.ELF
 ```
 
-For direct Spike runs, use logs when useful:
+Use logs when useful:
 
 ```bash
-/path/to/build-cov/spike -l --log-commits --log=/tmp/spike_cov_one_case/spike.log /path/to/case.ELF
+${HYPTEST_SPIKE_COV_BIN:-$HYPTEST_SPIKE_COV/build/spike} \
+  -l --log-commits --log=/tmp/spike_cov_one_case/spike.log \
+  /path/to/case.ELF
 ```
 
 5. Generate the post-run `.gcov` snapshot.

@@ -4,10 +4,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-SUMMARY="${SPIKE_COV_SUMMARY:-/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/gcov_raw/gcov_memblock_non_h_summary.txt}"
-GCOV_RAW="${SPIKE_GCOV_RAW:-/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/gcov_raw}"
-SOURCE_ROOT="${SPIKE_SOURCE_ROOT:-/nfs/home/wuyuanlong/workspace/offical-spike-coverage}"
-OUT_DIR="${SPIKE_COV_SKILL_SMOKE_OUT:-/tmp/spike_cov_skill_smoke}"
+OUT_DIR="${HYPTEST_SPIKE_COV_SMOKE_OUT:-${TMPDIR:-/tmp}/spike_cov_skill_smoke}"
+EXTERNAL_SMOKE="${HYPTEST_SPIKE_COV_EXTERNAL_SMOKE:-0}"
+SUMMARY="${SPIKE_COV_SUMMARY:-}"
+GCOV_RAW="${SPIKE_GCOV_RAW:-}"
+SOURCE_ROOT="${SPIKE_SOURCE_ROOT:-}"
+if [[ -n "${HYPTEST_SPIKE_COV:-}" ]]; then
+  GCOV_RAW="${GCOV_RAW:-$HYPTEST_SPIKE_COV/cov_doc/gcov_raw}"
+  SOURCE_ROOT="${SOURCE_ROOT:-$HYPTEST_SPIKE_COV}"
+fi
 
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
@@ -23,12 +28,31 @@ require_report_sections() {
 python3 scripts/validate_target.py targets/TEMPLATE.json
 python3 scripts/validate_target.py targets/memblock_non_h.json
 python3 -m py_compile scripts/*.py
+python3 -m json.tool specs/TEMPLATE.json >/dev/null
+python3 -m json.tool specs/nanhu_v5_1_ap.json >/dev/null
 python3 -m json.tool targets/TEMPLATE.json >/dev/null
 python3 -m json.tool targets/memblock_non_h.json >/dev/null
 python3 -m json.tool evals/evals.json >/dev/null
 
+cat > "$OUT_DIR/memblock_portable_summary.txt" <<'EOF'
+File 'riscv/mmu.cc'
+Lines executed:5.00% of 100
+Branches executed:0.00% of 20
+Calls executed:0.00% of 5
+Creating 'mmu.cc.gcov'
+File 'riscv/mmu.h'
+Lines executed:15.00% of 40
+Branches executed:5.00% of 10
+Calls executed:0.00% of 2
+Creating 'mmu.h.gcov'
+File 'riscv/insns/lw.h'
+Lines executed:0.00% of 4
+Branches executed:0.00% of 1
+Calls executed:0.00% of 1
+Creating 'lw.h.gcov'
+EOF
 python3 scripts/analyze_spike_gcov.py \
-  --summary "$SUMMARY" \
+  --summary "$OUT_DIR/memblock_portable_summary.txt" \
   --target targets/memblock_non_h.json \
   --top 3 \
   --json-out "$OUT_DIR/summary.json" \
@@ -46,11 +70,12 @@ cat > "$OUT_DIR/synthetic_target.json" <<'EOF'
   "name": "synthetic",
   "title": "Synthetic coverage target",
   "description": "Smoke fixture for focus/gate/call gaps",
-  "spec": {
+  "project_spec": "specs/nanhu_v5_1_ap.json",
+  "coverage_focus": {
     "profile": "synthetic",
-    "source_of_truth": "smoke",
-    "included_extensions_or_features": [],
-    "excluded_extensions_or_features": []
+    "purpose": "Smoke fixture coverage slice",
+    "included_features": [],
+    "excluded_features": []
   },
   "scope_in": ["synthetic"],
   "scope_out": ["not part of synthetic smoke"],
@@ -186,32 +211,38 @@ grep -q "basis: summary-low-branch-or-call" "$OUT_DIR/synth_handoff.md"
 grep -q "missing_entries" "$OUT_DIR/synth_handoff.md"
 require_report_sections "$OUT_DIR/synth_handoff.md"
 
-python3 scripts/inspect_gcov_lines.py \
-  --gcov-dir "$GCOV_RAW" \
-  --source-root "$SOURCE_ROOT" \
-  --target targets/memblock_non_h.json \
-  --file mmu.cc.gcov \
-  --context 2 \
-  --max-functions 2 \
-  --json-out "$OUT_DIR/line.json" \
-  --markdown-out "$OUT_DIR/line.md"
-grep -q "被过滤规则排除" "$OUT_DIR/line.md"
-require_report_sections "$OUT_DIR/line.md"
+if [[ "$EXTERNAL_SMOKE" == "1" ]]; then
+  : "${SUMMARY:?set SPIKE_COV_SUMMARY to a concrete target summary file when HYPTEST_SPIKE_COV_EXTERNAL_SMOKE=1}"
+  : "${GCOV_RAW:?set HYPTEST_SPIKE_COV or SPIKE_GCOV_RAW when HYPTEST_SPIKE_COV_EXTERNAL_SMOKE=1}"
+  : "${SOURCE_ROOT:?set HYPTEST_SPIKE_COV or SPIKE_SOURCE_ROOT when HYPTEST_SPIKE_COV_EXTERNAL_SMOKE=1}"
 
-python3 scripts/build_handoff_packet.py \
-  --summary-json "$OUT_DIR/summary.json" \
-  --inspect-json "$OUT_DIR/line.json" \
-  --top 1 \
-  --markdown-out "$OUT_DIR/handoff.md"
-grep -q "line_evidence_status" "$OUT_DIR/handoff.md"
-grep -q "scenario_coverage_gap" "$OUT_DIR/handoff.md"
-grep -q "cross_scenario_signature" "$OUT_DIR/handoff.md"
-grep -q "coverage_evidence_role" "$OUT_DIR/handoff.md"
-grep -q "inspection-hint-weak" "$OUT_DIR/handoff.md"
-grep -q "profile_gate" "$OUT_DIR/handoff.md"
-grep -q "same_flow_evidence" "$OUT_DIR/handoff.md"
-require_report_sections "$OUT_DIR/handoff.md"
-python3 scripts/check_handoff_final.py --strict-handoff "$OUT_DIR/handoff.md"
+  python3 scripts/analyze_spike_gcov.py \
+    --summary "$SUMMARY" \
+    --target targets/memblock_non_h.json \
+    --top 3 \
+    --json-out "$OUT_DIR/external_summary.json" \
+    --markdown-out "$OUT_DIR/external_summary.md"
+  require_report_sections "$OUT_DIR/external_summary.md"
+
+  python3 scripts/inspect_gcov_lines.py \
+    --gcov-dir "$GCOV_RAW" \
+    --source-root "$SOURCE_ROOT" \
+    --target targets/memblock_non_h.json \
+    --file mmu.cc.gcov \
+    --context 2 \
+    --max-functions 2 \
+    --json-out "$OUT_DIR/external_line.json" \
+    --markdown-out "$OUT_DIR/external_line.md"
+  require_report_sections "$OUT_DIR/external_line.md"
+
+  python3 scripts/build_handoff_packet.py \
+    --summary-json "$OUT_DIR/external_summary.json" \
+    --inspect-json "$OUT_DIR/external_line.json" \
+    --top 1 \
+    --markdown-out "$OUT_DIR/external_handoff.md"
+  require_report_sections "$OUT_DIR/external_handoff.md"
+  python3 scripts/check_handoff_final.py --strict-handoff "$OUT_DIR/external_handoff.md"
+fi
 
 cat > "$OUT_DIR/bad_default_gate.md" <<'EOF'
 evidence_class: shared-path
@@ -385,7 +416,7 @@ mkdir -p "$OUT_DIR/fake_hyptest/case_elf_asm/spike" "$OUT_DIR/fake_build"
 touch "$OUT_DIR/fake_hyptest/case_elf_asm/spike/ai_probe_a.ELF"
 touch "$OUT_DIR/fake_hyptest/case_elf_asm/spike/ai_probe_b.ELF"
 python3 scripts/run_case_coverage_matrix.py \
-  --hyptest-repo "$OUT_DIR/fake_hyptest" \
+  --hyptest-home "$OUT_DIR/fake_hyptest" \
   --target targets/memblock_non_h.json \
   --build-dir "$OUT_DIR/fake_build" \
   --all-elves \
@@ -395,10 +426,12 @@ python3 scripts/run_case_coverage_matrix.py \
   --out-dir "$OUT_DIR/case_matrix_fake" > "$OUT_DIR/case_matrix_fake.stdout"
 grep -q "runner=PASS" "$OUT_DIR/case_matrix_fake.stdout"
 grep -q "Runner 状态" "$OUT_DIR/case_matrix_fake/summary.md"
+grep -q 'command_template: `bash -lc' "$OUT_DIR/case_matrix_fake/summary.md"
+grep -q 'command_template_source: `arg:--command-template`' "$OUT_DIR/case_matrix_fake/summary.md"
 grep -q "ai_probe_a" "$OUT_DIR/case_matrix_fake/summary.md"
 require_report_sections "$OUT_DIR/case_matrix_fake/summary.md"
 python3 scripts/run_case_coverage_matrix.py \
-  --hyptest-repo "$OUT_DIR/fake_hyptest" \
+  --hyptest-home "$OUT_DIR/fake_hyptest" \
   --target targets/memblock_non_h.json \
   --build-dir "$OUT_DIR/fake_build" \
   --all-elves \
@@ -416,8 +449,8 @@ cat > "$OUT_DIR/fake_spike.sh" <<'EOF'
 printf 'PASSED fake_spike %s\n' "$*"
 EOF
 chmod +x "$OUT_DIR/fake_spike.sh"
-HYPTEST_SPIKE_BIN="$OUT_DIR/fake_spike.sh" python3 scripts/run_case_coverage_matrix.py \
-  --hyptest-repo "$OUT_DIR/fake_hyptest" \
+HYPTEST_SPIKE_COV_BIN="$OUT_DIR/fake_spike.sh" python3 scripts/run_case_coverage_matrix.py \
+  --hyptest-home "$OUT_DIR/fake_hyptest" \
   --target targets/memblock_non_h.json \
   --build-dir "$OUT_DIR/fake_build" \
   --all-elves \
@@ -427,7 +460,14 @@ HYPTEST_SPIKE_BIN="$OUT_DIR/fake_spike.sh" python3 scripts/run_case_coverage_mat
   --out-dir "$OUT_DIR/case_matrix_default_runner" > "$OUT_DIR/case_matrix_default_runner.stdout"
 grep -q "runner=PASS" "$OUT_DIR/case_matrix_default_runner.stdout"
 grep -q "ai_probe_b" "$OUT_DIR/case_matrix_default_runner/summary.md"
-grep -q "fake_spike --isa=" "$OUT_DIR/case_matrix_default_runner/cases/0001_ai_probe_b/run.log"
+grep -q 'command_template_source: `project_spec:coverage_spike.default_args`' "$OUT_DIR/case_matrix_default_runner/summary.md"
+grep -q 'command_template: `{spike_bin} --isa=rv64imafdcv_' "$OUT_DIR/case_matrix_default_runner/summary.md"
+if ! grep -q -- "--isa=rv64imafdcv_" "$OUT_DIR/case_matrix_default_runner/cases/0001_ai_probe_b/run.log"; then
+  echo "default runner did not use project spec --isa" >&2
+  exit 1
+fi
+grep -q -- "--priv=MSU" "$OUT_DIR/case_matrix_default_runner/cases/0001_ai_probe_b/run.log"
+grep -q "fake_spike .*ai_probe_b.ELF" "$OUT_DIR/case_matrix_default_runner/cases/0001_ai_probe_b/run.log"
 require_report_sections "$OUT_DIR/case_matrix_default_runner/summary.md"
 
 echo "smoke tests ok: $OUT_DIR"

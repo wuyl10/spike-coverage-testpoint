@@ -1,0 +1,55 @@
+{
+  "name": "fill_me_project_spec",
+  "title": "Human-readable project implementation name",
+  "description": "Project-level implementation contract shared by multiple coverage targets.",
+  "environment": {
+    "coverage_repo": "HYPTEST_SPIKE_COV",
+    "hyptest_repo": "HYPTEST_HOME",
+    "coverage_spike_bin_default": "$HYPTEST_SPIKE_COV/build/spike",
+    "spike_build_dir_default": "$HYPTEST_SPIKE_COV/build",
+    "gcov_raw_dir_default": "$HYPTEST_SPIKE_COV/cov_doc/gcov_raw",
+    "source_root_default": "$HYPTEST_SPIKE_COV",
+    "hyptest_elf_dir_default": "$HYPTEST_HOME/case_elf_asm/spike"
+  },
+  "implementation_model": {
+    "coverage_runner": "How coverage Spike is run for this project.",
+    "compile_boundary": "What must not be mixed with coverage collection.",
+    "source_of_truth": "Where implementation/source/coverage evidence comes from.",
+    "summary_policy": "How target/run-specific coverage summaries are selected."
+  },
+  "coverage_spike": {
+    "default_isa": "rv64imafdc_zicntr_zihpm",
+    "default_priv": "MSU",
+    "default_args": [
+      "--isa={default_isa}",
+      "--priv={default_priv}"
+    ],
+    "notes": [
+      "Fill this with the coverage Spike ISA/profile accepted by this project's Spike binary.",
+      "Do not blindly serialize every YES row from isa_profile.support into --isa; platform rows and implementation attributes may not be Spike ISA tokens.",
+      "If this project intentionally needs a one-off runner command, pass --command-template for that run instead of changing the project default."
+    ]
+  },
+  "isa_profile": {
+    "profile_name": "fill_me",
+    "status_values": [
+      "YES",
+      "NO",
+      "UNKNOWN"
+    ],
+    "support": {
+      "I": "YES"
+    }
+  },
+  "available_implementation_features": [
+    "List implementation surfaces that targets may select from."
+  ],
+  "excluded_implementation_features": [
+    "List unsupported project implementation surfaces that targets must not silently include."
+  ],
+  "memblock_relevant_constraints": [],
+  "target_policy": [
+    "Targets choose concrete coverage slices under this project implementation."
+  ],
+  "notes": []
+}

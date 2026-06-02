@@ -3,11 +3,18 @@
 
 This is an evidence generator for path-aware coverage work:
 
-1. select cases using get_result.py-like selectors;
+1. select already-built hyptest ELFs using get_result.py-like selectors;
 2. reset coverage counters for each case;
 3. run exactly one ELF with the coverage Spike;
 4. regenerate .gcov snapshots before/after the run;
 5. compare the snapshots and write a final matrix report.
+
+This script does not compile hyptest cases and does not call hyptest's ordinary
+Spike runner. It consumes existing ELFs and runs them with the coverage Spike
+resolved from --spike-bin, HYPTEST_SPIKE_COV_BIN, or HYPTEST_SPIKE_COV/build/spike.
+By default, the runner reads coverage Spike arguments from the selected target's
+project spec (`coverage_spike.default_args`) and builds
+"{spike_bin} <spec args> {elf}". Pass --command-template to override that fully.
 
 The report does not decide architecture intent by itself. It gives the agent
 the per-case counter evidence needed to judge missing paths and test points.
@@ -30,29 +37,24 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
+from target_config import compile_scope_warning_patterns, load_target_with_project_spec
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_ROOT = SCRIPT_DIR.parent
-DEFAULT_HYPTEST_REPO = Path("/nfs/home/wuyuanlong/workspace/riscv-hyp-tests-nhv5.1")
-DEFAULT_SPIKE_COV_REPO = Path("/nfs/home/wuyuanlong/workspace/offical-spike-coverage")
-DEFAULT_BUILD_DIR = DEFAULT_SPIKE_COV_REPO / "build-cov"
-DEFAULT_TARGET = SKILL_ROOT / "targets" / "memblock_non_h.json"
+ENV_HYPTEST_HOME = "HYPTEST_HOME"
+ENV_HYPTEST_SPIKE_COV = "HYPTEST_SPIKE_COV"
+ENV_HYPTEST_ELF_DIR = "HYPTEST_ELF_DIR"
+ENV_HYPTEST_SPIKE_COV_BIN = "HYPTEST_SPIKE_COV_BIN"
+ENV_SPIKE_BUILD_DIR = "SPIKE_BUILD_DIR"
+ENV_SPIKE_GCOV_RAW = "SPIKE_GCOV_RAW"
+ENV_SPIKE_SOURCE_ROOT = "SPIKE_SOURCE_ROOT"
 ARTIFACT_MAP_FILE = "artifact_name_map.json"
 SHORT_RUN_NAME_LIMIT = 80
 SHORT_RUN_NAME_PREFIX = 48
 WHOLE_WORD_MARKERS = {"PASSED", "FAILED"}
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
-DEFAULT_SPIKE_ISA = (
-    "rv64IMAFDCV_zicond_zicntr_zihpm_zba_zbb_zbc_zbs_zbkb_zbkc_zbkx_"
-    "zimop_zcmop_zcb_zknd_zkne_zknh_zksed_zksh_zvbb_svinval_sscofpmf_svpbmt_"
-    "zicbom_zicboz_sstc_svnapot_smstateen_zicclsm"
-)
-DEFAULT_COMMAND_TEMPLATE = (
-    "{spike_bin} "
-    f"--isa={DEFAULT_SPIKE_ISA} "
-    "{elf}"
-)
 DEFAULT_REQUIRED_MARKERS = ["PASSED"]
 DEFAULT_FORBIDDEN_MARKERS = ["FAILED", "untested exception", "ERROR:"]
 
@@ -119,14 +121,41 @@ class CaseMatrixResult:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--hyptest-repo", type=Path, default=DEFAULT_HYPTEST_REPO)
-    parser.add_argument("--target", type=Path, default=DEFAULT_TARGET, help="target JSON for scope filters")
-    parser.add_argument("--build-dir", type=Path, default=DEFAULT_BUILD_DIR, help="Spike coverage build dir")
-    parser.add_argument("--spike-bin", type=Path, help="coverage Spike executable; overrides env")
+    parser.add_argument(
+        "--hyptest-home",
+        dest="hyptest_home",
+        type=Path,
+        help=(
+            f"hyptest repository root; defaults to ${ENV_HYPTEST_HOME}. "
+            "Required for --case/--case-list and for default --elf-dir resolution; "
+            "explicit --elf paths can be used without it."
+        ),
+    )
+    parser.add_argument(
+        "--target",
+        type=Path,
+        help="target JSON for scope filters; required for coverage runs",
+    )
+    parser.add_argument(
+        "--build-dir",
+        type=Path,
+        help=(
+            f"Spike coverage build dir; defaults to ${ENV_SPIKE_BUILD_DIR}, or "
+            f"${ENV_HYPTEST_SPIKE_COV}/build. Required unless --skip-gcov or --dry-run is used."
+        ),
+    )
+    parser.add_argument(
+        "--spike-bin",
+        type=Path,
+        help=f"coverage Spike executable; overrides ${ENV_HYPTEST_SPIKE_COV_BIN}",
+    )
     parser.add_argument(
         "--elf-dir",
         type=Path,
-        help="directory containing case ELFs; default is <hyptest-repo>/case_elf_asm/spike",
+        help=(
+            f"directory containing case ELFs; defaults to ${ENV_HYPTEST_ELF_DIR}, "
+            "or <hyptest-home>/case_elf_asm/spike"
+        ),
     )
     parser.add_argument("--out-dir", type=Path, help="output directory; default is /tmp/spike_cov_case_matrix_<time>")
 
@@ -153,10 +182,12 @@ def parse_args() -> argparse.Namespace:
     runner = parser.add_argument_group("runner")
     runner.add_argument(
         "--command-template",
-        default=DEFAULT_COMMAND_TEMPLATE,
+        default=None,
         help=(
             "runner command template. Supports {spike_bin}, {elf}, {elf_name}, "
-            "{elf_dir}, {case_name}, {run_name}, and {case_dir}"
+            "{elf_dir}, {case_name}, {run_name}, and {case_dir}. When omitted, "
+            "the script builds a template from the target project spec's "
+            "coverage_spike.default_args."
         ),
     )
     runner.add_argument("--timeout", type=float, default=15.0)
@@ -221,6 +252,11 @@ def parse_args() -> argparse.Namespace:
     )
     compare.add_argument("--compare-limit", type=int, default=40)
 
+    parser.add_argument(
+        "--check-env",
+        action="store_true",
+        help="print resolved environment-derived paths and exit",
+    )
     parser.add_argument("--dry-run", action="store_true", help="show selected cases/gcno files and exit")
     return parser.parse_args()
 
@@ -230,6 +266,78 @@ def resolve_path(path: str | Path, base: Path | None = None) -> Path:
     if expanded.is_absolute():
         return expanded
     return (base or Path.cwd()) / expanded
+
+
+def env_path(name: str, base: Path | None = None) -> Path | None:
+    value = os.environ.get(name)
+    if not value:
+        return None
+    return resolve_path(value, base)
+
+
+def default_hyptest_home() -> Path | None:
+    return env_path(ENV_HYPTEST_HOME)
+
+
+def default_spike_cov_repo() -> Path | None:
+    return env_path(ENV_HYPTEST_SPIKE_COV)
+
+
+def default_build_dir_from_env() -> Path | None:
+    explicit = env_path(ENV_SPIKE_BUILD_DIR)
+    if explicit is not None:
+        return explicit
+    repo = default_spike_cov_repo()
+    if repo is not None:
+        return repo / "build"
+    return None
+
+
+def default_gcov_raw_from_env() -> Path | None:
+    explicit = env_path(ENV_SPIKE_GCOV_RAW)
+    if explicit is not None:
+        return explicit
+    repo = default_spike_cov_repo()
+    if repo is not None:
+        return repo / "cov_doc" / "gcov_raw"
+    return None
+
+
+def default_source_root_from_env() -> Path | None:
+    explicit = env_path(ENV_SPIKE_SOURCE_ROOT)
+    if explicit is not None:
+        return explicit
+    return default_spike_cov_repo()
+
+
+def default_spike_bin_from_env(env: dict[str, str]) -> str | None:
+    explicit = env.get(ENV_HYPTEST_SPIKE_COV_BIN)
+    if explicit:
+        return str(resolve_path(explicit))
+    if env.get(ENV_SPIKE_BUILD_DIR):
+        return str(resolve_path(env[ENV_SPIKE_BUILD_DIR]) / "spike")
+    if env.get(ENV_HYPTEST_SPIKE_COV):
+        return str(resolve_path(env[ENV_HYPTEST_SPIKE_COV]) / "build" / "spike")
+    return None
+
+
+def default_spike_bin_source(env: dict[str, str]) -> str:
+    if env.get(ENV_HYPTEST_SPIKE_COV_BIN):
+        return f"env:{ENV_HYPTEST_SPIKE_COV_BIN}"
+    if env.get(ENV_SPIKE_BUILD_DIR):
+        return f"derived:{ENV_SPIKE_BUILD_DIR}/spike"
+    if env.get(ENV_HYPTEST_SPIKE_COV):
+        return f"derived:{ENV_HYPTEST_SPIKE_COV}/build/spike"
+    return "unresolved"
+
+
+def default_elf_dir_from_env(hyptest_home: Path | None) -> Path | None:
+    explicit = env_path(ENV_HYPTEST_ELF_DIR, hyptest_home)
+    if explicit is not None:
+        return explicit
+    if hyptest_home is not None:
+        return hyptest_home / "case_elf_asm" / "spike"
+    return None
 
 
 def normalize_case_name_token(token: str) -> str:
@@ -318,7 +426,9 @@ def resolve_elf_path(case_name: str, elf_dir: Path, artifact_map: dict[str, str]
     return elf_dir / f"{case_name}.ELF"
 
 
-def suggest_case_names(case_name: str, elf_dir: Path, artifact_map: dict[str, str], limit: int = 6) -> list[str]:
+def suggest_case_names(case_name: str, elf_dir: Path | None, artifact_map: dict[str, str], limit: int = 6) -> list[str]:
+    if elf_dir is None:
+        return []
     candidates = sorted(set(artifact_map) | {path.stem for path in elf_dir.glob("*.ELF")})
     if not candidates:
         return []
@@ -343,12 +453,12 @@ def read_case_tokens(list_paths: Iterable[str], base: Path) -> list[str]:
     return tokens
 
 
-def select_cases(args: argparse.Namespace, elf_dir: Path, artifact_map: dict[str, str]) -> tuple[list[CaseSpec], str]:
-    explicit_elves: list[Path] = [resolve_path(item, args.hyptest_repo) for item in args.elf]
-    for token in read_case_tokens(args.case_list, args.hyptest_repo):
+def select_cases(args: argparse.Namespace, elf_dir: Path | None, artifact_map: dict[str, str]) -> tuple[list[CaseSpec], str]:
+    explicit_elves: list[Path] = [resolve_path(item, args.hyptest_home) for item in args.elf]
+    for token in read_case_tokens(args.case_list, args.hyptest_home):
         path = Path(os.path.expandvars(token)).expanduser()
         if token.endswith(".ELF") or path.is_absolute():
-            explicit_elves.append(resolve_path(token, args.hyptest_repo))
+            explicit_elves.append(resolve_path(token, args.hyptest_home))
         else:
             args.case.append(token)
 
@@ -373,13 +483,15 @@ def select_cases(args: argparse.Namespace, elf_dir: Path, artifact_map: dict[str
         source_desc = (source_desc + "; " if source_desc else "") + "explicit --elf paths"
 
     excluded = {normalize_case_name_token(item) for item in args.exclude_case}
-    for token in read_case_tokens(args.exclude_list, args.hyptest_repo):
+    for token in read_case_tokens(args.exclude_list, args.hyptest_home):
         excluded.add(normalize_case_name_token(token))
     excluded.discard("")
 
     specs: list[CaseSpec] = []
     for case_name in unique_keep_order(name for name in case_names if name):
         if case_name in excluded:
+            continue
+        if elf_dir is None:
             continue
         elf_path = resolve_elf_path(case_name, elf_dir, artifact_map)
         suggestions = [] if elf_path.exists() else suggest_case_names(case_name, elf_dir, artifact_map)
@@ -421,7 +533,12 @@ def marker_present(output: str, marker: str) -> bool:
 
 
 def scope_warning_patterns_from_target(target: dict[str, Any]) -> list[tuple[str, re.Pattern[str]]]:
-    patterns: list[tuple[str, re.Pattern[str]]] = []
+    project_spec_data = target.get("project_spec_data", {})
+    patterns: list[tuple[str, re.Pattern[str]]] = (
+        compile_scope_warning_patterns(project_spec_data)
+        if isinstance(project_spec_data, dict)
+        else []
+    )
     for item in target.get("scope_out", []):
         text = str(item).lower()
         if "hs/vs/vu" in text or "virtualization" in text:
@@ -440,9 +557,9 @@ def scope_warning_patterns_from_target(target: dict[str, Any]) -> list[tuple[str
         if "hlv" in text or "hsv" in text:
             patterns.append(("scope_out: H load/store instruction text", re.compile(r"\b(?:hlv|hlvx|hsv)[a-z0-9_.]*\b", re.IGNORECASE)))
     deduped: list[tuple[str, re.Pattern[str]]] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[str] = set()
     for label, pattern in patterns:
-        key = (label, pattern.pattern)
+        key = pattern.pattern
         if key in seen:
             continue
         seen.add(key)
@@ -480,10 +597,64 @@ def output_to_text(output: str | bytes | None) -> str:
 
 
 def resolve_runner_spike_bin(env: dict[str, str]) -> str:
-    spike_bin = env.get("HYPTEST_SPIKE_BIN") or env.get("SPIKE_BIN")
+    spike_bin = default_spike_bin_from_env(env)
     if not spike_bin:
-        raise ValueError("set --spike-bin, HYPTEST_SPIKE_BIN, or SPIKE_BIN to the coverage Spike executable")
+        raise ValueError(
+            f"set --spike-bin, {ENV_HYPTEST_SPIKE_COV_BIN}, {ENV_SPIKE_BUILD_DIR}, "
+            f"or {ENV_HYPTEST_SPIKE_COV} to resolve the coverage Spike executable"
+        )
     return spike_bin
+
+
+def render_spec_arg(raw_arg: str, coverage_spike: dict[str, Any]) -> str:
+    replacements = {
+        key: str(value)
+        for key, value in coverage_spike.items()
+        if isinstance(value, (str, int, float)) and not isinstance(value, bool)
+    }
+    try:
+        return raw_arg.format(**replacements)
+    except KeyError as exc:
+        missing = str(exc).strip("'")
+        raise ValueError(f"coverage_spike.default_args references unknown field {{{missing}}}") from exc
+    except ValueError as exc:
+        raise ValueError(f"coverage_spike.default_args item `{raw_arg}` has invalid format syntax: {exc}") from exc
+
+
+def target_project_spec_data(target: dict[str, Any]) -> dict[str, Any]:
+    project_spec_data = target.get("project_spec_data", {})
+    return project_spec_data if isinstance(project_spec_data, dict) else {}
+
+
+def command_template_from_project_spec(target: dict[str, Any]) -> tuple[str, str]:
+    project_spec_data = target_project_spec_data(target)
+    coverage_spike = project_spec_data.get("coverage_spike")
+    if not isinstance(coverage_spike, dict):
+        raise ValueError(
+            "selected target's project spec must define coverage_spike.default_args "
+            "when --command-template is omitted"
+        )
+
+    raw_args = coverage_spike.get("default_args", [])
+    if isinstance(raw_args, str):
+        raw_args = [raw_args]
+    if not isinstance(raw_args, list) or not all(isinstance(item, str) for item in raw_args):
+        raise ValueError("project spec field coverage_spike.default_args must be a string or list of strings")
+
+    rendered_args = [render_spec_arg(item, coverage_spike) for item in raw_args]
+    if not rendered_args:
+        raise ValueError(
+            "selected target's project spec has empty coverage_spike.default_args; "
+            "fill it in or pass --command-template explicitly"
+        )
+    quoted_args = [shlex.quote(item) for item in rendered_args]
+    return " ".join(["{spike_bin}", *quoted_args, "{elf}"]), "project_spec:coverage_spike.default_args"
+
+
+def resolve_command_template(args: argparse.Namespace, target: dict[str, Any]) -> tuple[str, str]:
+    if args.command_template:
+        return args.command_template, "arg:--command-template"
+    return command_template_from_project_spec(target)
 
 
 def build_command(
@@ -494,8 +665,14 @@ def build_command(
     case_dir: Path,
     env: dict[str, str],
 ) -> str:
+    placeholder_names = ("spike_bin", "elf", "elf_name", "elf_dir", "case_name", "run_name", "case_dir")
+    if not any(f"{{{name}}}" in command_template for name in placeholder_names):
+        raise ValueError(
+            'command template must contain one of "{spike_bin}", "{elf}", "{elf_name}", '
+            '"{elf_dir}", "{case_name}", "{run_name}", or "{case_dir}"'
+        )
     placeholders = {
-        "spike_bin": shlex.quote(resolve_runner_spike_bin(env)),
+        "spike_bin": shlex.quote(resolve_runner_spike_bin(env)) if "{spike_bin}" in command_template else "",
         "elf": shlex.quote(str(elf_path)),
         "elf_name": shlex.quote(elf_path.name),
         "elf_dir": shlex.quote(str(elf_path.parent)),
@@ -503,22 +680,17 @@ def build_command(
         "run_name": shlex.quote(run_name),
         "case_dir": shlex.quote(str(case_dir)),
     }
-    if not any(f"{{{name}}}" in command_template for name in placeholders):
-        raise ValueError(
-            'command template must contain one of "{spike_bin}", "{elf}", "{elf_name}", '
-            '"{elf_dir}", "{case_name}", "{run_name}", or "{case_dir}"'
-        )
     return command_template.format(**placeholders)
 
 
 def make_runner_env(spike_bin: Path | None) -> dict[str, str]:
     env = os.environ.copy()
     if spike_bin:
-        env["HYPTEST_SPIKE_BIN"] = str(spike_bin)
-    elif not env.get("HYPTEST_SPIKE_BIN") and env.get("SPIKE_BIN"):
-        env["HYPTEST_SPIKE_BIN"] = env["SPIKE_BIN"]
-    if env.get("HYPTEST_SPIKE_BIN") and not env.get("SPIKE_BIN"):
-        env["SPIKE_BIN"] = env["HYPTEST_SPIKE_BIN"]
+        env[ENV_HYPTEST_SPIKE_COV_BIN] = str(spike_bin)
+    elif not env.get(ENV_HYPTEST_SPIKE_COV_BIN):
+        inferred = default_spike_bin_from_env(env)
+        if inferred:
+            env[ENV_HYPTEST_SPIKE_COV_BIN] = inferred
     return env
 
 
@@ -591,7 +763,12 @@ def run_case(
 def load_target(path: Path | None) -> dict[str, Any]:
     if not path:
         return {}
-    return json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    data, project_spec, project_spec_path, project_spec_data = load_target_with_project_spec(path)
+    data = dict(data)
+    data["project_spec"] = project_spec
+    data["project_spec_path"] = str(project_spec_path)
+    data["project_spec_data"] = project_spec_data
+    return data
 
 
 def dimension_selected(name: str, filters: list[str]) -> bool:
@@ -709,6 +886,9 @@ def resolve_gcno_paths(args: argparse.Namespace, target: dict[str, Any]) -> tupl
     resolved: list[Path] = []
     unresolved: list[str] = []
     for token in unique_keep_order(tokens):
+        if args.build_dir is None:
+            unresolved.append(token)
+            continue
         paths, missing = resolve_gcno_token(token, args.build_dir)
         resolved.extend(paths)
         unresolved.extend(missing)
@@ -716,8 +896,10 @@ def resolve_gcno_paths(args: argparse.Namespace, target: dict[str, Any]) -> tupl
     return unique_paths(resolved), unique_keep_order(unresolved), target_tokens
 
 
-def reset_gcda(build_dir: Path, gcno_paths: list[Path], scope: str) -> list[str]:
+def reset_gcda(build_dir: Path | None, gcno_paths: list[Path], scope: str) -> list[str]:
     deleted: list[str] = []
+    if build_dir is None:
+        return deleted
     if scope == "none":
         return deleted
     if scope == "all":
@@ -1294,7 +1476,7 @@ def build_summary_payload(
     return {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "dry_run": dry_run,
-        "hyptest_repo": str(args.hyptest_repo),
+        "hyptest_home": str(args.hyptest_home),
         "elf_dir": str(args.elf_dir),
         "target": str(args.target),
         "build_dir": str(args.build_dir),
@@ -1307,6 +1489,8 @@ def build_summary_payload(
         "gcno_tokens_from_target": target_tokens,
         "unresolved_gcno_tokens": unresolved_gcno,
         "default_compare_files": default_compare_files,
+        "command_template": args.command_template,
+        "command_template_source": getattr(args, "command_template_source", "unresolved"),
         "reset_scope": args.reset_scope,
         "skip_gcov": args.skip_gcov,
         "runner_status_counts": count_by(result.status for result in results),
@@ -1423,6 +1607,8 @@ def write_markdown_report(payload: dict[str, Any], path: Path) -> None:
     lines.append(f"- selected_case_count: {payload.get('selected_case_count')}")
     lines.append(f"- gcno_count: {payload.get('gcno_count')}")
     lines.append(f"- default_compare_file_count: {len(payload.get('default_compare_files', []))}")
+    lines.append(f"- command_template: `{payload.get('command_template')}`")
+    lines.append(f"- command_template_source: `{payload.get('command_template_source')}`")
     lines.append(f"- reset_scope: `{payload.get('reset_scope')}`")
     lines.append(f"- dry_run: `{payload.get('dry_run')}`")
     lines.append("")
@@ -1437,11 +1623,13 @@ def write_markdown_report(payload: dict[str, Any], path: Path) -> None:
     lines.append("")
     lines.append("## 输入")
     lines.append("")
-    for key in ("hyptest_repo", "elf_dir", "target", "build_dir", "out_dir", "case_source"):
+    for key in ("hyptest_home", "elf_dir", "target", "build_dir", "out_dir", "case_source"):
         lines.append(f"- {key}: `{payload.get(key)}`")
     lines.append(f"- selected_case_count: {payload.get('selected_case_count')}")
     lines.append(f"- gcno_count: {payload.get('gcno_count')}")
     lines.append(f"- default_compare_file_count: {len(payload.get('default_compare_files', []))}")
+    lines.append(f"- command_template: `{payload.get('command_template')}`")
+    lines.append(f"- command_template_source: `{payload.get('command_template_source')}`")
     lines.append(f"- reset_scope: `{payload.get('reset_scope')}`")
     lines.append(f"- dry_run: `{payload.get('dry_run')}`")
     lines.append("")
@@ -1694,30 +1882,129 @@ def write_dry_run_report(payload: dict[str, Any], args: argparse.Namespace) -> N
         print(f"unresolved_gcno_tokens={len(payload['unresolved_gcno_tokens'])}")
 
 
+def print_env_row(key: str, value: str, source: str) -> None:
+    exists = f" exists={Path(value).exists()}" if value else ""
+    print(f"{key}={value} source={source}{exists}")
+
+
+def resolved_source(value: Path | None, explicit_env: str, derived: str) -> str:
+    if os.environ.get(explicit_env):
+        return f"env:{explicit_env}"
+    if value is not None:
+        return derived
+    return "unresolved"
+
+
+def print_env_check(args: argparse.Namespace) -> int:
+    env = make_runner_env(args.spike_bin)
+    cov = default_spike_cov_repo()
+    gcov_raw = default_gcov_raw_from_env()
+    source_root = default_source_root_from_env()
+    spike_bin_source_env = {ENV_HYPTEST_SPIKE_COV_BIN: str(args.spike_bin)} if args.spike_bin else os.environ
+    spike_bin_source = default_spike_bin_source(spike_bin_source_env)
+    if args.spike_bin:
+        spike_bin_source = "arg:--spike-bin"
+
+    resolved = {
+        "HYPTEST_HOME": (
+            str(args.hyptest_home) if args.hyptest_home else "",
+            f"env:{ENV_HYPTEST_HOME}" if args.hyptest_home else "unresolved",
+        ),
+        "HYPTEST_SPIKE_COV": (str(cov or ""), f"env:{ENV_HYPTEST_SPIKE_COV}" if cov else "unresolved"),
+        "SPIKE_BUILD_DIR": (
+            str(args.build_dir) if args.build_dir else "",
+            resolved_source(args.build_dir, ENV_SPIKE_BUILD_DIR, f"derived:{ENV_HYPTEST_SPIKE_COV}/build"),
+        ),
+        "SPIKE_GCOV_RAW": (
+            str(gcov_raw) if gcov_raw else "",
+            resolved_source(gcov_raw, ENV_SPIKE_GCOV_RAW, f"derived:{ENV_HYPTEST_SPIKE_COV}/cov_doc/gcov_raw"),
+        ),
+        "SPIKE_SOURCE_ROOT": (
+            str(source_root) if source_root else "",
+            resolved_source(source_root, ENV_SPIKE_SOURCE_ROOT, f"derived:{ENV_HYPTEST_SPIKE_COV}"),
+        ),
+        "HYPTEST_ELF_DIR": (
+            str(args.elf_dir) if args.elf_dir else "",
+            resolved_source(args.elf_dir, ENV_HYPTEST_ELF_DIR, f"derived:{ENV_HYPTEST_HOME}/case_elf_asm/spike"),
+        ),
+        "HYPTEST_SPIKE_COV_BIN": (env.get(ENV_HYPTEST_SPIKE_COV_BIN, ""), spike_bin_source),
+    }
+    for key, (value, source) in resolved.items():
+        print_env_row(key, value, source)
+    inferred_spike = cov / "build" / "spike" if cov else None
+    actual_spike = env.get(ENV_HYPTEST_SPIKE_COV_BIN)
+    if inferred_spike and actual_spike and Path(actual_spike) != inferred_spike:
+        print(f"warning={ENV_HYPTEST_SPIKE_COV_BIN} differs from derived {inferred_spike}", file=sys.stderr)
+    missing = [key for key in ("HYPTEST_HOME", "HYPTEST_SPIKE_COV") if not resolved[key][0]]
+    if missing:
+        print("missing_required=" + ",".join(missing), file=sys.stderr)
+        return 2
+    return 0
+
+
 def main() -> int:
     args = parse_args()
-    args.hyptest_repo = resolve_path(args.hyptest_repo)
-    args.build_dir = resolve_path(args.build_dir)
+    args.hyptest_home = resolve_path(args.hyptest_home) if args.hyptest_home else default_hyptest_home()
+    args.build_dir = resolve_path(args.build_dir) if args.build_dir else default_build_dir_from_env()
     args.target = resolve_path(args.target, SKILL_ROOT) if args.target else None
-    args.elf_dir = resolve_path(args.elf_dir, args.hyptest_repo) if args.elf_dir else args.hyptest_repo / "case_elf_asm" / "spike"
+    if args.elf_dir:
+        args.elf_dir = resolve_path(args.elf_dir, args.hyptest_home)
+    else:
+        args.elf_dir = default_elf_dir_from_env(args.hyptest_home)
     args.out_dir = resolve_path(args.out_dir) if args.out_dir else Path(f"/tmp/spike_cov_case_matrix_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
     args.spike_bin = resolve_path(args.spike_bin) if args.spike_bin else None
+
+    if args.check_env:
+        return print_env_check(args)
+
+    if args.target is None:
+        print("error: set --target <target.json> for coverage runs", file=sys.stderr)
+        return 2
+    if not args.target.exists():
+        print(f"error: target not found: {args.target}", file=sys.stderr)
+        return 2
 
     if not args.case and not args.elf and not args.case_list and not args.all_elves:
         print("error: select cases with --case, --case-list, --elf, or --all-elves", file=sys.stderr)
         return 2
+    if (args.case or args.case_list or args.all_elves) and args.elf_dir is None:
+        print(
+            f"error: set --hyptest-home/--elf-dir or export {ENV_HYPTEST_HOME}/{ENV_HYPTEST_ELF_DIR} "
+            "when selecting cases by name or --all-elves",
+            file=sys.stderr,
+        )
+        return 2
+    if (args.case_list or args.exclude_list) and args.hyptest_home is None:
+        print(
+            f"error: set --hyptest-home or export {ENV_HYPTEST_HOME} when using --case-list or --exclude-list",
+            file=sys.stderr,
+        )
+        return 2
     if args.limit < 0:
         print("error: --limit must be >= 0", file=sys.stderr)
         return 2
-    if not args.dry_run and not args.skip_gcov and not args.build_dir.exists():
+    if not args.dry_run and not args.skip_gcov and args.build_dir is None:
+        print(
+            f"error: set --build-dir or export {ENV_SPIKE_BUILD_DIR}/{ENV_HYPTEST_SPIKE_COV} "
+            "unless --skip-gcov or --dry-run is used",
+            file=sys.stderr,
+        )
+        return 2
+    if args.build_dir is not None and not args.dry_run and not args.skip_gcov and not args.build_dir.exists():
         print(f"error: build dir not found: {args.build_dir}", file=sys.stderr)
         return 2
-    if not args.elf_dir.exists() and not args.elf:
+    if args.elf_dir is not None and not args.elf_dir.exists() and not args.elf:
         print(f"error: elf dir not found: {args.elf_dir}", file=sys.stderr)
         return 2
 
-    target = load_target(args.target) if args.target and args.target.exists() else {}
-    artifact_map = load_artifact_map(args.elf_dir)
+    target = load_target(args.target)
+    try:
+        args.command_template, args.command_template_source = resolve_command_template(args, target)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    artifact_map = load_artifact_map(args.elf_dir) if args.elf_dir else {}
     cases, source_desc = select_cases(args, args.elf_dir, artifact_map)
     if not cases:
         print("error: no cases selected", file=sys.stderr)

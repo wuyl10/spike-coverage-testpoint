@@ -1,0 +1,1054 @@
+{
+  "name": "nanhu_v5_1_ap",
+  "title": "NanHu-V5.1 AP project implementation",
+  "description": "Project-level implementation contract and ISA/profile support matrix for NanHu-V5.1 AP Spike coverage analysis.",
+  "environment": {
+    "coverage_repo": "HYPTEST_SPIKE_COV",
+    "hyptest_repo": "HYPTEST_HOME",
+    "coverage_spike_bin_default": "$HYPTEST_SPIKE_COV/build/spike",
+    "spike_build_dir_default": "$HYPTEST_SPIKE_COV/build",
+    "gcov_raw_dir_default": "$HYPTEST_SPIKE_COV/cov_doc/gcov_raw",
+    "source_root_default": "$HYPTEST_SPIKE_COV",
+    "hyptest_elf_dir_default": "$HYPTEST_HOME/case_elf_asm/spike"
+  },
+  "implementation_model": {
+    "coverage_runner": "Run existing hyptest ELF files directly with the gcov-instrumented Spike binary.",
+    "compile_boundary": "Do not invoke hyptest compilation or the normal hyptest Spike runner during coverage collection.",
+    "source_of_truth": "NanHu-V5.1 AP support matrix plus the selected coverage snapshot, generated .gcov files, and Spike source under HYPTEST_SPIKE_COV.",
+    "summary_policy": "Coverage summary files are target/run-specific inputs and are not derived from a single global environment variable by default."
+  },
+  "coverage_spike": {
+    "default_isa": "rv64imafdcv_zicntr_zihpm_zba_zbb_zbc_zbs_zbkb_zbkc_zbkx_zimop_zcmop_zcb_zfa_zifencei_svinval_svade_svpbmt_sstc_sscofpmf_smstateen_zicbom_zicbop_zicboz_zicond_zkn_zknd_zkne_zknh_zks_zksed_zksh_zkt",
+    "default_priv": "MSU",
+    "default_args": [
+      "--isa={default_isa}",
+      "--priv={default_priv}"
+    ],
+    "notes": [
+      "This is the default coverage Spike runner ISA for this project spec. It includes Spike-accepted ISA/profile tokens from the NanHu-V5.1 AP support matrix that materially affect coverage execution.",
+      "Do not blindly serialize every YES row from isa_profile.support into --isa: platform rows such as PLIC/ACLINT/Debug and implementation attributes are not Spike ISA tokens.",
+      "The current coverage Spike binary does not accept some matrix YES labels as --isa tokens, such as Za64rs, Zic64b, Ziccrse, and Ziccamoa; keep those in the support matrix but not in default_args unless the Spike parser gains support."
+    ]
+  },
+  "isa_profile": {
+    "profile_name": "NanHu-V5.1 AP",
+    "status_values": [
+      "YES",
+      "NO",
+      "UNKNOWN"
+    ],
+    "support": {
+      "I": "YES",
+      "M": "YES",
+      "A": "YES",
+      "F": "YES",
+      "D": "YES",
+      "C": "YES",
+      "B": "YES",
+      "Zicsr": "YES",
+      "Zicntr": "YES",
+      "Zihpm": "YES",
+      "Ziccif": "YES",
+      "Ziccrse": "YES",
+      "Ziccamoa": "YES",
+      "Zicclsm": "NO",
+      "Za64rs": "YES",
+      "Zihintpause": "NO",
+      "Zic64b": "YES",
+      "Zicbom": "YES",
+      "Zicbop": "YES",
+      "Zicboz": "YES",
+      "Zfhmin": "NO",
+      "Zkt": "YES",
+      "V": "YES",
+      "Zvfhmin": "NO",
+      "Zvbb": "NO",
+      "Zvkt": "NO",
+      "Zihintntl": "NO",
+      "Zicond": "YES",
+      "Zimop": "YES",
+      "Zcmop": "YES",
+      "Zcb": "YES",
+      "Zfa": "YES",
+      "Zawrs": "NO",
+      "Supm": "NO",
+      "Zvkg": "NO",
+      "Zvksg": "NO",
+      "Zabha": "NO",
+      "Zacas": "NO",
+      "Ziccamoac": "NO",
+      "Zvbc": "NO",
+      "Zama16b": "NO",
+      "Zfh": "NO",
+      "Zbc": "YES",
+      "Zicfilp": "UNKNOWN",
+      "Zicfiss": "UNKNOWN",
+      "Zvh": "NO",
+      "Zfbfmin": "NO",
+      "Zvfbfmin": "UNKNOWN",
+      "Zvfbfwma": "UNKNOWN",
+      "Zifencei": "YES",
+      "Ss1p13": "YES",
+      "Svbare": "YES",
+      "Sv39": "YES",
+      "Svade": "YES",
+      "Ssccptr": "YES",
+      "Sstvecd": "YES",
+      "Sstvala": "YES",
+      "Sscounterenw": "YES",
+      "Svpbmt": "YES",
+      "Svinval": "YES",
+      "Svnapot": "NO",
+      "Sstc": "YES",
+      "Sscofpmf": "YES",
+      "Ssnpn": "NO",
+      "Ss1p64xl": "YES",
+      "H": "NO",
+      "Ssstateen": "YES",
+      "Shcounterenw": "NO",
+      "Shvstvala": "NO",
+      "Shtvala": "NO",
+      "Shstvecd": "NO",
+      "Shvsatpa": "NO",
+      "Shgatpa": "NO",
+      "Sv48": "YES",
+      "Sv57": "NO",
+      "Zkr": "NO",
+      "Svadu": "NO",
+      "Sdtrig": "YES",
+      "Ssttrig": "NO",
+      "Sdext": "YES",
+      "Sspm": "NO",
+      "Svpctc": "NO",
+      "Zba": "YES",
+      "Zbb": "YES",
+      "Zbs": "YES",
+      "Sscfg": "NO",
+      "Q": "NO",
+      "Zfinx": "NO",
+      "Zdinx": "NO",
+      "Zhinxmin": "NO",
+      "Zk": "NO",
+      "Zkn": "YES",
+      "Zknd": "YES",
+      "Zkne": "YES",
+      "Zknh": "YES",
+      "Zbkb": "YES",
+      "Zbkc": "YES",
+      "Zbkx": "YES",
+      "Zks": "YES",
+      "Zksed": "YES",
+      "Zksh": "YES",
+      "Za128rs": "NO",
+      "PM": "NO",
+      "Sm1p11": "NO",
+      "Sm1p12": "NO",
+      "Ss1p11": "NO",
+      "Ss1p12": "NO",
+      "Smstateen": "YES",
+      "RAS": "NO",
+      "etrace": "YES",
+      "Debug": "YES",
+      "ACLINT": "YES",
+      "PLIC": "YES",
+      "AIA": "NO",
+      "SMEPMP": "NO",
+      "non_RVA23_smrnmi": "YES",
+      "non_RVA23_smdbltrp": "NO",
+      "non_RVA23_ssdbltrp": "NO",
+      "non_RVA23_smmpm": "NO",
+      "non_RVA23_smnpm": "NO"
+    },
+    "image_rows_with_unclear_status": [
+      "Zicfilp",
+      "Zicfiss",
+      "Zvfbfmin",
+      "Zvfbfwma"
+    ]
+  },
+  "available_implementation_features": [
+    "RV64 I/M/A/F/D/C/B scalar instruction implementation paths",
+    "Zicsr/Zicntr/Zihpm CSR/counter implementation paths",
+    "Zifencei instruction-fetch fence implementation paths",
+    "Zicbom/Zicbop/Zicboz CBO/CMO implementation paths",
+    "V vector load/store implementation paths",
+    "Stage1 translation for Sv39 and Sv48, plus Svbare",
+    "Svpbmt, Svinval, Svade, Sstc, Sscofpmf, Ssstateen, and related supervisor implementation paths",
+    "PMP/PMA/PBMT implementation paths, excluding SMEPMP",
+    "Debug trigger implementation paths through Sdtrig/Sdext where coverage source exposes memory/fetch behavior",
+    "PLIC, ACLINT, etrace, and Debug platform paths when coverage/source evidence is relevant"
+  ],
+  "excluded_implementation_features": [
+    "H extension and all HS/VS/VU/stage2/guest-page-fault paths",
+    "Zacas AMOCAS and compare-and-swap instruction paths",
+    "Zabha byte/halfword AMO instruction paths",
+    "Zfh/Zfhmin/Zvfhmin/Zvh/Zfbfmin half-precision and BF16 paths unless a future matrix marks them supported",
+    "Q and x-register floating-point variants such as Zfinx/Zdinx/Zhinxmin",
+    "Sv57 and Svnapot",
+    "AIA, SMEPMP, pointer masking, RAS, and H-state-enable paths"
+  ],
+  "unsupported_feature_rules": {
+    "Zacas": {
+      "tokens": [
+        "amocas",
+        "zacas",
+        "compare-and-swap"
+      ],
+      "summary_exclude_regex": [
+        "amocas",
+        "Zacas"
+      ],
+      "line_exclude_regex": [
+        "amocas",
+        "Zacas"
+      ],
+      "scope_warning_regex": [
+        "\\b(?:amocas|zacas)\\b"
+      ]
+    },
+    "Zabha": {
+      "tokens": [
+        "amoadd_b",
+        "amoadd_h",
+        "amoand_b",
+        "amoand_h",
+        "amomax_b",
+        "amomax_h",
+        "amomaxu_b",
+        "amomaxu_h",
+        "amomin_b",
+        "amomin_h",
+        "amominu_b",
+        "amominu_h",
+        "amoor_b",
+        "amoor_h",
+        "amoswap_b",
+        "amoswap_h",
+        "amoxor_b",
+        "amoxor_h",
+        "zabha",
+        "byte/halfword amo"
+      ],
+      "summary_exclude_regex": [
+        "amo(add|and|max|maxu|min|minu|or|swap|xor)_[bh]",
+        "Zabha"
+      ],
+      "line_exclude_regex": [
+        "amo(add|and|max|maxu|min|minu|or|swap|xor)_[bh]",
+        "Zabha"
+      ],
+      "scope_warning_regex": [
+        "\\bamo(?:add|and|max|maxu|min|minu|or|swap|xor)_[bh]\\b",
+        "\\bZabha\\b"
+      ]
+    },
+    "Zfh": {
+      "tokens": [
+        "flh",
+        "fsh",
+        "zfh"
+      ],
+      "summary_exclude_regex": [
+        "\\bflh\\b|\\bfsh\\b",
+        "Zfh"
+      ],
+      "line_exclude_regex": [
+        "\\bflh\\b|\\bfsh\\b",
+        "Zfh"
+      ],
+      "scope_warning_regex": [
+        "\\b(?:flh|fsh|zfh)\\b"
+      ]
+    },
+    "Zfhmin": {
+      "tokens": [
+        "zfhmin"
+      ],
+      "summary_exclude_regex": [
+        "Zfhmin"
+      ],
+      "line_exclude_regex": [
+        "Zfhmin"
+      ],
+      "scope_warning_regex": [
+        "\\bZfhmin\\b"
+      ]
+    },
+    "Zvfhmin": {
+      "tokens": [
+        "zvfhmin"
+      ],
+      "summary_exclude_regex": [
+        "Zvfhmin"
+      ],
+      "line_exclude_regex": [
+        "Zvfhmin"
+      ],
+      "scope_warning_regex": [
+        "\\bZvfhmin\\b"
+      ]
+    },
+    "Zvh": {
+      "tokens": [
+        "zvh"
+      ],
+      "summary_exclude_regex": [
+        "Zvh"
+      ],
+      "line_exclude_regex": [
+        "Zvh"
+      ],
+      "scope_warning_regex": [
+        "\\bZvh\\b"
+      ]
+    },
+    "Zfbfmin": {
+      "tokens": [
+        "zfbfmin"
+      ],
+      "summary_exclude_regex": [
+        "Zfbfmin"
+      ],
+      "line_exclude_regex": [
+        "Zfbfmin"
+      ],
+      "scope_warning_regex": [
+        "\\bZfbfmin\\b"
+      ]
+    },
+    "Q": {
+      "tokens": [
+        "flq",
+        "fsq",
+        "quad-precision"
+      ],
+      "summary_exclude_regex": [
+        "\\bflq\\b|\\bfsq\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bflq\\b|\\bfsq\\b"
+      ],
+      "scope_warning_regex": [
+        "\\b(?:flq|fsq|quad-precision)\\b"
+      ]
+    },
+    "H": {
+      "tokens": [
+        "hlv",
+        "hsv",
+        "hlvx",
+        "hgatp",
+        "vsatp",
+        "henvcfg",
+        "guest_page_fault",
+        "stage2"
+      ],
+      "summary_exclude_regex": [
+        "guest_page_fault",
+        "hgatp",
+        "vsatp",
+        "henvcfg",
+        "s2xlate",
+        "\\b(?:hlv|hlvx|hsv)[a-z0-9_.]*\\b"
+      ],
+      "line_exclude_regex": [
+        "s2xlate",
+        "hgatp",
+        "vsatp",
+        "henvcfg",
+        "\\bhstatus\\b",
+        "HSTATUS_",
+        "forced_virt",
+        "\\bhlv",
+        "\\bhsv",
+        "\\bhlvx",
+        "guest_page_fault",
+        "\\bguest\\b"
+      ],
+      "scope_warning_regex": [
+        "\\b(?:hlv|hlvx|hsv)[a-z0-9_.]*\\b",
+        "\\b(?:hgatp|vsatp|henvcfg)\\b",
+        "\\b(?:stage2|stage\\s*2|s2xlate)\\b",
+        "\\bguest page fault\\b|\\btrap_.*guest_page_fault\\b"
+      ]
+    },
+    "Sv57": {
+      "tokens": [
+        "sv57"
+      ],
+      "summary_exclude_regex": [
+        "\\bSv57\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bSv57\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bSv57\\b"
+      ]
+    },
+    "Svnapot": {
+      "tokens": [
+        "svnapot"
+      ],
+      "summary_exclude_regex": [
+        "\\bSvnapot\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bSvnapot\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bSvnapot\\b"
+      ]
+    },
+    "AIA": {
+      "tokens": [
+        "aia"
+      ],
+      "summary_exclude_regex": [
+        "\\bAIA\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bAIA\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bAIA\\b"
+      ]
+    },
+    "SMEPMP": {
+      "tokens": [
+        "smepmp"
+      ],
+      "summary_exclude_regex": [
+        "SMEPMP"
+      ],
+      "line_exclude_regex": [
+        "SMEPMP"
+      ],
+      "scope_warning_regex": [
+        "\\bSMEPMP\\b"
+      ]
+    },
+    "PM": {
+      "tokens": [
+        "pointer masking",
+        "pointer.mask"
+      ],
+      "summary_exclude_regex": [
+        "pointer.mask"
+      ],
+      "line_exclude_regex": [
+        "pointer.mask"
+      ],
+      "scope_warning_regex": [
+        "pointer.mask|pointer masking"
+      ]
+    },
+    "RAS": {
+      "tokens": [
+        "ras"
+      ],
+      "summary_exclude_regex": [
+        "\\bRAS\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bRAS\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bRAS\\b"
+      ]
+    },
+    "Zawrs": {
+      "tokens": [
+        "wrs_nto",
+        "wrs_sto",
+        "zawrs",
+        "wait-on-reservation"
+      ],
+      "summary_exclude_regex": [
+        "\\bwrs_(?:nto|sto)\\b",
+        "Zawrs"
+      ],
+      "line_exclude_regex": [
+        "\\bwrs_(?:nto|sto)\\b",
+        "Zawrs"
+      ],
+      "scope_warning_regex": [
+        "\\b(?:wrs_nto|wrs_sto|zawrs|wait-on-reservation)\\b"
+      ]
+    },
+    "Zicclsm": {
+      "tokens": [
+        "zicclsm",
+        "misaligned-memory extension",
+        "positive misaligned-memory extension"
+      ],
+      "summary_exclude_regex": [
+        "Zicclsm"
+      ],
+      "line_exclude_regex": [
+        "Zicclsm"
+      ],
+      "scope_warning_regex": [
+        "\\bZicclsm\\b",
+        "misaligned-memory extension"
+      ]
+    },
+    "Svadu": {
+      "tokens": [
+        "svadu",
+        "hardware a/d update",
+        "hardware ad update"
+      ],
+      "summary_exclude_regex": [
+        "\\bSvadu\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bSvadu\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bSvadu\\b",
+        "hardware\\s+A/D\\s+update",
+        "hardware\\s+AD\\s+update"
+      ]
+    },
+    "Zfinx": {
+      "tokens": [
+        "zfinx",
+        "x-register floating-point"
+      ],
+      "summary_exclude_regex": [
+        "\\bZfinx\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bZfinx\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bZfinx\\b",
+        "x-register floating-point"
+      ]
+    },
+    "Zdinx": {
+      "tokens": [
+        "zdinx"
+      ],
+      "summary_exclude_regex": [
+        "\\bZdinx\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bZdinx\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bZdinx\\b"
+      ]
+    },
+    "Zhinxmin": {
+      "tokens": [
+        "zhinxmin"
+      ],
+      "summary_exclude_regex": [
+        "\\bZhinxmin\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bZhinxmin\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bZhinxmin\\b"
+      ]
+    },
+    "Zihintpause": {
+      "tokens": [
+        "zihintpause",
+        "pause"
+      ],
+      "summary_exclude_regex": [
+        "\\bZihintpause\\b",
+        "\\bpause\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bZihintpause\\b",
+        "\\bpause\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bZihintpause\\b",
+        "\\bpause\\b"
+      ]
+    },
+    "Zvbb": {
+      "tokens": [
+        "zvbb"
+      ],
+      "summary_exclude_regex": [
+        "\\bZvbb\\b",
+        "\\bv(?:andn|brev|brev8|rev8|clz|ctz|cpop|rol|ror|wsll)_v[ivx][imx]?\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bZvbb\\b",
+        "\\bv(?:andn|brev|brev8|rev8|clz|ctz|cpop|rol|ror|wsll)_v[ivx][imx]?\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bZvbb\\b"
+      ]
+    },
+    "Zvkt": {
+      "tokens": [
+        "zvkt"
+      ],
+      "summary_exclude_regex": [
+        "\\bZvkt\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bZvkt\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bZvkt\\b"
+      ]
+    },
+    "Zihintntl": {
+      "tokens": [
+        "zihintntl",
+        "ntl_p1",
+        "ntl_pall",
+        "ntl_s1",
+        "ntl_all"
+      ],
+      "summary_exclude_regex": [
+        "\\bZihintntl\\b",
+        "\\bntl_(?:p1|pall|s1|all)\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bZihintntl\\b",
+        "\\bntl_(?:p1|pall|s1|all)\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bZihintntl\\b",
+        "\\bntl_(?:p1|pall|s1|all)\\b"
+      ]
+    },
+    "Supm": {
+      "tokens": [
+        "supm"
+      ],
+      "summary_exclude_regex": [
+        "\\bSupm\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bSupm\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bSupm\\b"
+      ]
+    },
+    "Zvkg": {
+      "tokens": [
+        "zvkg"
+      ],
+      "summary_exclude_regex": [
+        "\\bZvkg\\b",
+        "\\bvghsh\\b|\\bvgmul\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bZvkg\\b",
+        "\\bvghsh\\b|\\bvgmul\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bZvkg\\b",
+        "\\b(?:vghsh|vgmul|Zvkg)\\b"
+      ]
+    },
+    "Zvksg": {
+      "tokens": [
+        "zvksg"
+      ],
+      "summary_exclude_regex": [
+        "\\bZvksg\\b",
+        "\\bvsm[34]"
+      ],
+      "line_exclude_regex": [
+        "\\bZvksg\\b",
+        "\\bvsm[34]"
+      ],
+      "scope_warning_regex": [
+        "\\bZvksg\\b",
+        "\\b(?:vsm3|vsm4|Zvksg)\\b"
+      ]
+    },
+    "Ziccamoac": {
+      "tokens": [
+        "ziccamoac"
+      ],
+      "summary_exclude_regex": [
+        "\\bZiccamoac\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bZiccamoac\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bZiccamoac\\b"
+      ]
+    },
+    "Zvbc": {
+      "tokens": [
+        "zvbc"
+      ],
+      "summary_exclude_regex": [
+        "\\bZvbc\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bZvbc\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bZvbc\\b"
+      ]
+    },
+    "Zama16b": {
+      "tokens": [
+        "zama16b"
+      ],
+      "summary_exclude_regex": [
+        "\\bZama16b\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bZama16b\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bZama16b\\b"
+      ]
+    },
+    "Ssnpn": {
+      "tokens": [
+        "ssnpn"
+      ],
+      "summary_exclude_regex": [
+        "\\bSsnpn\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bSsnpn\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bSsnpn\\b"
+      ]
+    },
+    "Shcounterenw": {
+      "tokens": [
+        "shcounterenw",
+        "hcounteren"
+      ],
+      "summary_exclude_regex": [
+        "\\bShcounterenw\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bShcounterenw\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bShcounterenw\\b"
+      ]
+    },
+    "Shvstvala": {
+      "tokens": [
+        "shvstvala",
+        "vstval"
+      ],
+      "summary_exclude_regex": [
+        "\\bShvstvala\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bShvstvala\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bShvstvala\\b"
+      ]
+    },
+    "Shtvala": {
+      "tokens": [
+        "shtvala",
+        "htval"
+      ],
+      "summary_exclude_regex": [
+        "\\bShtvala\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bShtvala\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bShtvala\\b"
+      ]
+    },
+    "Shstvecd": {
+      "tokens": [
+        "shstvecd",
+        "vstvec"
+      ],
+      "summary_exclude_regex": [
+        "\\bShstvecd\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bShstvecd\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bShstvecd\\b"
+      ]
+    },
+    "Shvsatpa": {
+      "tokens": [
+        "shvsatpa",
+        "vsatp"
+      ],
+      "summary_exclude_regex": [
+        "\\bShvsatpa\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bShvsatpa\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bShvsatpa\\b"
+      ]
+    },
+    "Shgatpa": {
+      "tokens": [
+        "shgatpa",
+        "hgatp"
+      ],
+      "summary_exclude_regex": [
+        "\\bShgatpa\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bShgatpa\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bShgatpa\\b"
+      ]
+    },
+    "Zkr": {
+      "tokens": [
+        "zkr"
+      ],
+      "summary_exclude_regex": [
+        "\\bZkr\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bZkr\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bZkr\\b"
+      ]
+    },
+    "Ssttrig": {
+      "tokens": [
+        "ssttrig",
+        "scontext"
+      ],
+      "summary_exclude_regex": [
+        "\\bSsttrig\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bSsttrig\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bSsttrig\\b"
+      ]
+    },
+    "Sspm": {
+      "tokens": [
+        "sspm"
+      ],
+      "summary_exclude_regex": [
+        "\\bSspm\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bSspm\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bSspm\\b"
+      ]
+    },
+    "Svpctc": {
+      "tokens": [
+        "svpctc"
+      ],
+      "summary_exclude_regex": [
+        "\\bSvpctc\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bSvpctc\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bSvpctc\\b"
+      ]
+    },
+    "Sscfg": {
+      "tokens": [
+        "sscfg"
+      ],
+      "summary_exclude_regex": [
+        "\\bSscfg\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bSscfg\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bSscfg\\b"
+      ]
+    },
+    "Zk": {
+      "tokens": [
+        "zk"
+      ],
+      "summary_exclude_regex": [
+        "\\bZk\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bZk\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bZk\\b"
+      ]
+    },
+    "Za128rs": {
+      "tokens": [
+        "za128rs"
+      ],
+      "summary_exclude_regex": [
+        "\\bZa128rs\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bZa128rs\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bZa128rs\\b"
+      ]
+    },
+    "Sm1p11": {
+      "tokens": [
+        "sm1p11"
+      ],
+      "summary_exclude_regex": [
+        "\\bSm1p11\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bSm1p11\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bSm1p11\\b"
+      ]
+    },
+    "Sm1p12": {
+      "tokens": [
+        "sm1p12"
+      ],
+      "summary_exclude_regex": [
+        "\\bSm1p12\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bSm1p12\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bSm1p12\\b"
+      ]
+    },
+    "Ss1p11": {
+      "tokens": [
+        "ss1p11"
+      ],
+      "summary_exclude_regex": [
+        "\\bSs1p11\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bSs1p11\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bSs1p11\\b"
+      ]
+    },
+    "Ss1p12": {
+      "tokens": [
+        "ss1p12"
+      ],
+      "summary_exclude_regex": [
+        "\\bSs1p12\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bSs1p12\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bSs1p12\\b"
+      ]
+    },
+    "non_RVA23_smdbltrp": {
+      "tokens": [
+        "non_rva23_smdbltrp",
+        "smdbltrp",
+        "double trap"
+      ],
+      "summary_exclude_regex": [
+        "\\bnon_RVA23_smdbltrp\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bnon_RVA23_smdbltrp\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bnon_RVA23_smdbltrp\\b"
+      ]
+    },
+    "non_RVA23_ssdbltrp": {
+      "tokens": [
+        "non_rva23_ssdbltrp",
+        "ssdbltrp",
+        "supervisor double trap"
+      ],
+      "summary_exclude_regex": [
+        "\\bnon_RVA23_ssdbltrp\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bnon_RVA23_ssdbltrp\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bnon_RVA23_ssdbltrp\\b"
+      ]
+    },
+    "non_RVA23_smmpm": {
+      "tokens": [
+        "non_rva23_smmpm",
+        "smmpm"
+      ],
+      "summary_exclude_regex": [
+        "\\bnon_RVA23_smmpm\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bnon_RVA23_smmpm\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bnon_RVA23_smmpm\\b"
+      ]
+    },
+    "non_RVA23_smnpm": {
+      "tokens": [
+        "non_rva23_smnpm",
+        "smnpm"
+      ],
+      "summary_exclude_regex": [
+        "\\bnon_RVA23_smnpm\\b"
+      ],
+      "line_exclude_regex": [
+        "\\bnon_RVA23_smnpm\\b"
+      ],
+      "scope_warning_regex": [
+        "\\bnon_RVA23_smnpm\\b"
+      ]
+    }
+  },
+  "memblock_relevant_constraints": [
+    "MemBlock targets may include scalar integer load/store, F/D scalar memory, C integer/F/D memory forms supported by AP, vector memory, LR/SC, word/doubleword AMO, CBO/CMO, fence/sfence, stage1 translation, PMP/PMA/PBMT, trigger/debug, MMIO/device, and memtracer/log evidence.",
+    "Do not propose AMOCAS/Zacas, byte/halfword AMO/Zabha, H/stage2/guest, Sv57/Svnapot, half-precision/BF16/Q, AIA, SMEPMP, or pointer-masking coverage gaps as in-scope MemBlock test points for this AP target.",
+    "Zicclsm is not supported; misaligned-memory candidates must be phrased as exception/priority/boundary behavior unless a target explicitly selects unsupported-extension negative testing."
+  ],
+  "target_policy": [
+    "Targets choose a concrete coverage slice under this NanHu-V5.1 AP implementation.",
+    "Targets own scope_in, scope_out, exclusions, dimensions, scenario coverage guidance, and gate/manual-run policy.",
+    "A target may further exclude supported implementation areas, but must not silently include areas marked NO in this spec."
+  ],
+  "notes": [
+    "This file encodes the current NanHu-V5.1 AP support matrix from the user-provided table.",
+    "It is not a hyptest spec_profile. hyptest implementation still needs hyptest-workflow profile checks before writing cases.",
+    "Rows marked UNKNOWN were visible in the screenshot but their YES/NO status was not legible; targets should not treat them as supported without explicit confirmation."
+  ]
+}

@@ -1,16 +1,20 @@
 # Coverage Target Files
 
-Target files are the single place to define what the Spike coverage analysis is
-about. Keep concrete scope, spec assumptions, exclusions, scenario axes, and
-dimensions here, not in `SKILL.md` and not hardcoded in scripts.
+Target files define one concrete coverage-analysis slice under a project spec.
+Keep target scope, focus, exclusions, scenario axes, gate policy, and dimensions
+here, not in `SKILL.md` and not hardcoded in scripts. Keep project
+implementation details in `../specs/*.json`.
 
 ## Fields
 
 - `name`, `title`, `description`: identify the target in script output.
-- `spec`: the target-specific spec/profile assumptions. Put the user's
-  "我要测什么，规格是什么" content here. This is still coverage-analysis
-  scope; hyptest implementation must do its own `hyptest-workflow` profile
-  checks before writing cases.
+- `project_spec`: path to the project implementation spec, usually a file under
+  `specs/*.json`. It describes the coverage Spike runner, environment-variable
+  interface, source root, and implementation surfaces this target selects from.
+- `coverage_focus`: the target-specific coverage slice/profile. Put the user's
+  "我要看哪部分覆盖率、包含/排除哪些 feature" content here. This is still
+  coverage-analysis scope; hyptest implementation must do its own
+  `hyptest-workflow` profile checks before writing cases.
 - `scope_in`: what belongs to this analysis. The agent uses this when deciding
   whether an uncovered path is relevant.
 - `scope_out`: what is intentionally excluded. The agent must not propose test
@@ -19,12 +23,16 @@ dimensions here, not in `SKILL.md` and not hardcoded in scripts.
   Default usage is usually `^riscv/`.
 - `summary_exclude_prefixes`: exclude files whose basename stem starts with one
   of these prefixes.
-- `summary_exclude_regex`: exclude normalized summary entries matching these
-  regexes.
+- `summary_exclude_regex`: target-specific extra exclusions for normalized
+  summary entries. Scripts automatically append `summary_exclude_regex` from
+  the selected project spec's `unsupported_feature_rules` for features marked
+  `NO`, so targets do not need to duplicate project-unsupported feature
+  filters.
 - `line_exclude_regex`: optional evidence filter for `inspect_gcov_lines.py`.
   It excludes matching functions by function name, excludes matching events by
   source/evidence text, and masks matching source-context lines in markdown.
-  Use it only for clear target exclusions; the agent still owns final judgment.
+  Use it only for clear target-specific exclusions; scripts automatically append
+  project-spec unsupported-feature line filters. The agent still owns final judgment.
   The line inspector reports excluded function/event counts; include those
   counts in analysis when filters may hide meaningful evidence.
 - `line_priority_regex`: optional ranking hints for `inspect_gcov_lines.py`.
@@ -42,7 +50,7 @@ dimensions here, not in `SKILL.md` and not hardcoded in scripts.
   confidence labels, reporting checklists, single-case increment rules, and
   path-marker names. It is not a complete path matrix or architecture spec.
 - `analysis_notes`: optional target-specific interpretation guidance for the
-  agent. Keep spec assumptions here, alongside the rest of the target.
+  agent. Keep coverage-slice assumptions here, alongside the rest of the target.
 - `source_priority`: source files the agent should inspect first when turning
   raw coverage evidence into scenarios.
 - `inspection_hints`: maps a dimension name to suggested `.gcov` files for the
@@ -83,6 +91,11 @@ the must-pass source events before calling a path confirmed-not-executed.
 `analyze_spike_gcov.py` reports `missing_entries_by_dimension` when a target
 entry does not appear in the selected gcov snapshot. This is not the same as 0%
 coverage; it may mean a Spike version/profile/build did not emit that entry.
+
+The scripts treat effective filters as `target rules + selected project spec
+NO-feature rules`. Keep implementation unsupported-feature regexes in
+`../specs/*.json` under `unsupported_feature_rules`; keep only this coverage
+slice's extra choices in the target.
 
 ## Scenario Coverage
 
@@ -166,8 +179,7 @@ valuable architecture scenario.
 After editing a target, run:
 
 ```bash
-python3 /nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/scripts/validate_target.py \
-  /path/to/target.json
+python3 scripts/validate_target.py /path/to/target.json
 ```
 
 This checks structure, regex syntax, dimension item format, inspection hints,

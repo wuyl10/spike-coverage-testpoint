@@ -3,15 +3,15 @@
   "evals": [
     {
       "id": 0,
-      "prompt": "用 targets/memblock_non_h.json 分析 /nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/gcov_raw/gcov_memblock_non_h_summary.txt，告诉我非 H MemBlock 覆盖率最应该补哪些高质量 hyptest 测试点，只要计划不要写 case。",
+      "prompt": "用 targets/memblock_non_h.json 分析这个明确指定的 summary：$HYPTEST_SPIKE_COV/cov_doc/gcov_raw/gcov_memblock_non_h_summary.txt，告诉我非 H MemBlock 覆盖率最应该补哪些高质量 hyptest 测试点，只要计划不要写 case。",
       "expected_output": "Reads the target file, uses gcov evidence, applies the target exclusions, groups gaps by target dimensions, and ranks high-quality test-point candidates with observable assertions and suggested hyptest locations.",
       "files": [
-        "/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/gcov_raw/gcov_memblock_non_h_summary.txt",
-        "/nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/memblock_non_h.json"
+        "$HYPTEST_SPIKE_COV/cov_doc/gcov_raw/gcov_memblock_non_h_summary.txt",
+        "targets/memblock_non_h.json"
       ],
       "assertions": [
         "Mentions the coverage summary path and the target file path/name.",
-        "Reads target spec/scope_in/scope_out instead of relying on hardcoded skill text.",
+        "Reads project_spec plus target coverage_focus/scope_in/scope_out instead of relying on hardcoded skill text.",
         "Applies target exclusions such as HLV/HSV/HLVX and stage2/guest faults.",
         "Validates or relies on a validated target file before analysis.",
         "Uses scripts only for coverage evidence extraction/ranking, then performs agent reasoning for test-point candidates.",
@@ -69,9 +69,9 @@
       "prompt": "用 spike-coverage-testpoint 和 targets/memblock_non_h.json 对 mmu.cc.gcov 和 v_ext_macros.h.gcov 做行级精查：找 #####、branch never executed、call never executed，解释对应没覆盖的场景，并列出测试点候选。不要写 case。",
       "expected_output": "Uses target-configured line-level gcov evidence from mmu.cc.gcov and v_ext_macros.h.gcov, groups misses by function/source line, interprets important uncovered branches/calls into in-scope scenarios, labels low-value or out-of-scope paths separately, and proposes self-checkable test-point candidates without editing cases.",
       "files": [
-        "/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/gcov_raw/mmu.cc.gcov",
-        "/nfs/home/wuyuanlong/workspace/offical-spike-coverage/cov_doc/gcov_raw/v_ext_macros.h.gcov",
-        "/nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/memblock_non_h.json"
+        "$HYPTEST_SPIKE_COV/cov_doc/gcov_raw/mmu.cc.gcov",
+        "$HYPTEST_SPIKE_COV/cov_doc/gcov_raw/v_ext_macros.h.gcov",
+        "targets/memblock_non_h.json"
       ],
       "assertions": [
         "Uses the target file for line-level evidence filtering and scope judgment.",
@@ -89,15 +89,15 @@
     },
     {
       "id": 4,
-      "prompt": "我想换一个 Spike 覆盖率分析目标，只看 atomic 和 AMOCAS，不看 vector。帮我先建立一个可编辑 target 文件，不要把这个规格写进 SKILL.md 或脚本。",
-      "expected_output": "Creates or proposes a standalone target JSON derived from targets/TEMPLATE.json, places atomic/AMOCAS in scope_in/dimensions, places vector in scope_out/exclusion guidance, and leaves SKILL.md/scripts generic.",
+      "prompt": "我想换一个 Spike 覆盖率分析目标，只看 NanHu-V5.1 AP 支持的 AMO/LRSC，不看 vector，也不看 Zacas/AMOCAS。帮我先建立一个可编辑 target 文件，不要把这个规格写进 SKILL.md 或脚本。",
+      "expected_output": "Creates or proposes a standalone target JSON derived from targets/TEMPLATE.json, places AP-supported AMO/LRSC in scope_in/dimensions, places vector and Zacas/AMOCAS in scope_out/exclusion guidance, and leaves SKILL.md/scripts generic.",
       "files": [
-        "/nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/TEMPLATE.json"
+        "targets/TEMPLATE.json"
       ],
       "assertions": [
         "Creates or describes a separate target file rather than editing hardcoded script logic.",
         "Keeps target-specific scope and exclusions out of SKILL.md.",
-        "Puts the requested spec/profile assumptions in the target file.",
+        "Puts the requested coverage_focus/profile assumptions in the target file and keeps project implementation details in specs/*.json.",
         "Includes source_priority, inspection_hints, duplicate_search_terms, and handoff_defaults in the target or explains how to fill them.",
         "Uses dimensions entries such as insn:lr_w, insn:sc_w, or glob:riscv/insns/amo*.h.",
         "States that scripts collect evidence and the agent judges scenario/test value.",
@@ -109,12 +109,12 @@
       "prompt": "分析 Spike 覆盖率，但我还没决定目标和规格；不要猜，告诉我需要先填哪些 target 字段。",
       "expected_output": "Refuses to proceed with hidden default scope, asks for or creates a target file from the template, and lists the required spec/scope/dimension/exclusion fields.",
       "files": [
-        "/nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/TEMPLATE.json"
+        "targets/TEMPLATE.json"
       ],
       "assertions": [
         "Does not run analysis with an implicit all-riscv/default target.",
         "Asks for or proposes a target file before coverage analysis.",
-        "Mentions required fields including spec, scope_in, scope_out, and dimensions.",
+        "Mentions required fields including project_spec, coverage_focus, scope_in, scope_out, and dimensions.",
         "Mentions optional path_analysis as evidence policy/reporting checklist when the goal involves path-sensitive execution-flow coverage.",
         "Mentions scenario_coverage as the target-owned checklist for cross execution scenario axes and evidence policy.",
         "Mentions validate_target.py as the check after creating or editing a target.",
@@ -146,7 +146,7 @@
       "prompt": "我要判断 MemBlock 某条执行流有没有真的跑过，不是只看每个 branch 是否分别覆盖。用 targets/memblock_non_h.json，说明怎么用单 case 增量覆盖和 path marker 判断。",
       "expected_output": "Builds a path signature from Spike source/gcov evidence using target path_analysis only as evidence policy/reporting checklist, explains gcov aggregate branch coverage limitations, proposes single-case before/after .gcov comparison, and recommends path markers when same-flow correlation cannot be proven.",
       "files": [
-        "/nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/memblock_non_h.json"
+        "targets/memblock_non_h.json"
       ],
       "assertions": [
         "Uses target path_analysis as guardrails and does not treat it as a complete MemBlock path matrix.",
@@ -170,7 +170,7 @@
       "prompt": "用 targets/memblock_non_h.json focus XSError，看看 micro cache error/NMI 这类覆盖率缺口怎么处理，只做分析不要写 case。",
       "expected_output": "Focuses through target duplicate search terms or aliases, finds the micro cache error/NMI dimension, treats it as manual/special-run by dimension_gate metadata, and avoids recommending default-gate tests unless deterministic injection exists.",
       "files": [
-        "/nfs/home/wuyuanlong/.agents/skills/spike-coverage-testpoint/targets/memblock_non_h.json"
+        "targets/memblock_non_h.json"
       ],
       "assertions": [
         "Focuses on micro cache error/NMI paths when the prompt uses XSError.",

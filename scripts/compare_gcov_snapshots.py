@@ -23,6 +23,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from target_config import load_target_with_project_spec, merged_regex_list
+
 
 GCOV_SOURCE_LINE_RE = re.compile(r"^\s*(?P<count>[^:]+):\s*(?P<line>\d+):(?P<code>.*)$")
 FUNCTION_RE = re.compile(
@@ -126,10 +128,8 @@ def parse_branch_or_call_counter_format(rest: str) -> str:
 def load_target_excludes(path: Path | None) -> list[re.Pattern[str]]:
     if not path:
         return []
-    data = json.loads(path.read_text(errors="replace"))
-    patterns = data.get("line_exclude_regex", [])
-    if not isinstance(patterns, list):
-        return []
+    data, _project_spec, _project_spec_path, project_spec_data = load_target_with_project_spec(path)
+    patterns = merged_regex_list(data, project_spec_data, "line_exclude_regex")
     return [re.compile(str(pattern), re.IGNORECASE) for pattern in patterns]
 
 

@@ -108,7 +108,7 @@ Use target-specific marker names from `targets/memblock_non_h.json`.
   `load_slow_path`.
 - `mem.access.scalar_store`: scalar/FP store enters `mmu_t::store` or
   `store_slow_path`.
-- `mem.access.amo`: AMO/LR/SC/AMOCAS enters the atomic path.
+- `mem.access.amo`: AMO/LR/SC enters the atomic path. Add Zacas/AMOCAS only for a target whose project spec marks Zacas as supported.
 - `mem.translate.tlb_hit`: access uses fast translation/cache path.
 - `mem.translate.tlb_miss_walk`: access walks/refills translation state.
 - `mem.protect.pmp_deny`: PMP/PMA/PBMT rejects access.

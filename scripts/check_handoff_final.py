@@ -55,7 +55,7 @@ GENERIC_NEEDS_SOURCE_RE = re.compile(
     r"choose one after evidence review|"
     r"derive this field from source/gcov/path-marker evidence|"
     r"derive from coverage dimension, representative entries, and inspected Spike source|"
-    r"derive from target spec/profile and dimension gate.*|"
+    r"derive from target coverage_focus/profile and dimension gate.*|"
     r"derive only if source/gcov proves .+|"
     r"list must-pass line/branch/call/path-marker evidence and current status|"
     r"in-scope \| out-of-scope \| needs target decision|"
