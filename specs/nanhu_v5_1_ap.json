@@ -18,16 +18,22 @@
     "summary_policy": "Coverage summary files are target/run-specific inputs and are not derived from a single global environment variable by default."
   },
   "coverage_spike": {
-    "default_isa": "rv64imafdcv_zicntr_zihpm_zba_zbb_zbc_zbs_zbkb_zbkc_zbkx_zimop_zcmop_zcb_zfa_zifencei_svinval_svade_svpbmt_sstc_sscofpmf_smstateen_zicbom_zicbop_zicboz_zicond_zkn_zknd_zkne_zknh_zks_zksed_zksh_zkt",
+    "default_isa": "rv64imafdcv_zicsr_zicntr_zihpm_ziccif_zba_zbb_zbc_zbs_zbkb_zbkc_zbkx_zimop_zcmop_zcb_zfa_zifencei_svinval_svade_svpbmt_sstc_sscofpmf_smstateen_zicbom_zicbop_zicboz_zicond_zkn_zknd_zkne_zknh_zks_zksed_zksh_zkt_smrnmi",
     "default_priv": "MSU",
     "default_args": [
       "--isa={default_isa}",
       "--priv={default_priv}"
     ],
+    "must_include_isa_tokens": [
+      "zicsr",
+      "ziccif",
+      "smrnmi"
+    ],
     "notes": [
       "This is the default coverage Spike runner ISA for this project spec. It includes Spike-accepted ISA/profile tokens from the NanHu-V5.1 AP support matrix that materially affect coverage execution.",
       "Do not blindly serialize every YES row from isa_profile.support into --isa: platform rows such as PLIC/ACLINT/Debug and implementation attributes are not Spike ISA tokens.",
-      "The current coverage Spike binary does not accept some matrix YES labels as --isa tokens, such as Za64rs, Zic64b, Ziccrse, and Ziccamoa; keep those in the support matrix but not in default_args unless the Spike parser gains support."
+      "The current coverage Spike binary does not accept some matrix YES labels as --isa tokens, such as Za64rs, Zic64b, Ziccrse, and Ziccamoa; keep those in the support matrix but not in default_args unless the Spike parser gains support.",
+      "Some support rows use project/table names instead of Spike tokens. For example non_RVA23_smrnmi is represented by the runner token smrnmi."
     ]
   },
   "isa_profile": {

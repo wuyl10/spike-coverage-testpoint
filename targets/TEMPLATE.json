@@ -2,7 +2,7 @@
   "name": "fill_me",
   "title": "Human-readable target name",
   "description": "What this coverage analysis is trying to measure.",
-  "project_spec": "specs/nanhu_v5_1_ap.json",
+  "project_spec": "specs/TEMPLATE.json",
   "coverage_focus": {
     "profile": "fill_me",
     "purpose": "Which concrete coverage slice under project_spec this target analyzes.",

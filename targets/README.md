@@ -179,9 +179,12 @@ valuable architecture scenario.
 After editing a target, run:
 
 ```bash
+python3 scripts/validate_spec.py specs/<project_spec>.json
 python3 scripts/validate_target.py /path/to/target.json
 ```
 
 This checks structure, regex syntax, dimension item format, inspection hints,
-and handoff defaults. It cannot prove the architecture scope is correct; the
-agent still has to judge that from the user's goal and source review.
+handoff defaults, and the referenced project spec. `validate_spec.py` is useful
+when the error belongs to project-owned runner/support-matrix configuration. The
+checks cannot prove the architecture scope is correct; the agent still has to
+judge that from the user's goal and source review.

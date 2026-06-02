@@ -18,15 +18,19 @@
     "summary_policy": "How target/run-specific coverage summaries are selected."
   },
   "coverage_spike": {
-    "default_isa": "rv64imafdc_zicntr_zihpm",
+    "default_isa": "rv64imafdc_zicsr_zicntr_zihpm",
     "default_priv": "MSU",
     "default_args": [
       "--isa={default_isa}",
       "--priv={default_priv}"
     ],
+    "must_include_isa_tokens": [
+      "zicsr"
+    ],
     "notes": [
       "Fill this with the coverage Spike ISA/profile accepted by this project's Spike binary.",
       "Do not blindly serialize every YES row from isa_profile.support into --isa; platform rows and implementation attributes may not be Spike ISA tokens.",
+      "Use must_include_isa_tokens for support-matrix rows or aliases that must be present in default_isa.",
       "If this project intentionally needs a one-off runner command, pass --command-template for that run instead of changing the project default."
     ]
   },

@@ -22,6 +22,7 @@
 - `scripts/analyze_path_markers.py`: 解析 coverage Spike path-marker 日志，报告 marker 序列是否出现；带 pc+insn、seq 或 access_id 的 JSONL 是强相关证据，弱 JSON/text fallback 会降级。
 - `scripts/check_handoff_final.py`: 检查报告/交接包里是否残留裸 `TODO(agent)`，也可用 strict 模式检查 handoff 字段完整性。
 - `scripts/run_smoke_tests.sh`: 改 skill 后的脚本级回归 smoke。
+- `scripts/validate_spec.py`: 校验 project spec JSON，包括 coverage Spike 默认参数、ISA support 状态和 `NO` 行的 unsupported-feature rules。
 - `scripts/validate_target.py`: 校验 target JSON 结构和正则。
 - `evals/`: skill 评估用例。
 
@@ -308,9 +309,10 @@ RUN_DIR="$HYPTEST_SPIKE_COV/cov_runs/memblock_non_h/20260521_current"
 mkdir -p "$REPORT_DIR" "$RUN_DIR"
 ```
 
-校验 target：
+校验 spec 和 target：
 
 ```bash
+python3 scripts/validate_spec.py specs/nanhu_v5_1_ap.json
 python3 scripts/validate_target.py targets/memblock_non_h.json
 ```
 

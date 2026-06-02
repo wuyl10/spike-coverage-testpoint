@@ -27,6 +27,8 @@ require_report_sections() {
 
 python3 scripts/validate_target.py targets/TEMPLATE.json
 python3 scripts/validate_target.py targets/memblock_non_h.json
+python3 scripts/validate_spec.py specs/TEMPLATE.json
+python3 scripts/validate_spec.py specs/nanhu_v5_1_ap.json
 python3 -m py_compile scripts/*.py
 python3 -m json.tool specs/TEMPLATE.json >/dev/null
 python3 -m json.tool specs/nanhu_v5_1_ap.json >/dev/null

@@ -274,6 +274,7 @@ If the user provides different paths, use those.
    - If no target exists, create one from `targets/TEMPLATE.json` and fill `project_spec`, `coverage_focus`, `scope_in`, `scope_out`, and `dimensions` from the user’s purpose.
    - Read `analysis_notes` and `duplicate_search_terms` from the target; read project implementation details from `specs/*.json`, not from `SKILL.md`.
    - If the user has not provided enough detail to fill a safe target, ask for the missing target decision before analyzing.
+   - After creating or editing a project spec, run `scripts/validate_spec.py <spec.json>` and fix errors before target analysis.
    - After creating or editing a target, run `scripts/validate_target.py <target.json>` and fix errors before analysis.
 
 2. **Collect coverage artifacts**
@@ -361,6 +362,7 @@ Use scripts by purpose; detailed examples and reproduction commands live in `REA
 
 | Need | Tool | Required output habit |
 |---|---|---|
+| Validate project spec | `scripts/validate_spec.py <spec.json>` | Run after every spec edit; catches runner defaults and unsupported-feature rule gaps. |
 | Validate or create target | `scripts/validate_target.py <target.json>` | Run after every target edit; fix errors before analysis. |
 | First-pass summary from gcov text | `scripts/analyze_spike_gcov.py --summary ... --target ...` | Save `summary.json` and `summary.md`; treat ranking as evidence only. |
 | Source/gcov miss inspection | `scripts/inspect_gcov_lines.py --gcov-dir ... --target ... --file ...` | Save `line.json` and `line.md`; translate misses to scenarios in agent analysis. |

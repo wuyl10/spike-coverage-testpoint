@@ -204,7 +204,7 @@ def check_project_spec_coverage_spike(
         errors.append(f"`project_spec` file `{spec_path}` has non-object `coverage_spike`")
         return
 
-    allowed_fields = {"default_isa", "default_priv", "default_args", "notes"}
+    allowed_fields = {"default_isa", "default_priv", "default_args", "must_include_isa_tokens", "notes"}
     unknown = sorted(set(coverage_spike) - allowed_fields)
     if unknown:
         warnings.append(f"`project_spec.coverage_spike` in `{spec_path}` has unknown fields: " + ", ".join(unknown))
@@ -218,6 +218,21 @@ def check_project_spec_coverage_spike(
     notes = coverage_spike.get("notes", [])
     if notes is not None and not is_str_list(notes):
         errors.append(f"`project_spec.coverage_spike.notes` in `{spec_path}` must be a list of strings")
+
+    must_include_isa_tokens = coverage_spike.get("must_include_isa_tokens", [])
+    if must_include_isa_tokens is not None and not is_str_list(must_include_isa_tokens):
+        errors.append(
+            f"`project_spec.coverage_spike.must_include_isa_tokens` in `{spec_path}` must be a list of strings"
+        )
+    else:
+        default_isa_tokens = set(str(coverage_spike.get("default_isa", "")).lower().split("_"))
+        for token in must_include_isa_tokens:
+            normalized = token.lower()
+            if normalized not in default_isa_tokens:
+                errors.append(
+                    f"`project_spec.coverage_spike.default_isa` in `{spec_path}` is missing required "
+                    f"Spike ISA token `{token}` from must_include_isa_tokens"
+                )
 
     raw_args = coverage_spike.get("default_args", [])
     if isinstance(raw_args, str):
@@ -281,10 +296,21 @@ def check_project_spec_rules(
 
     rules = spec_data.get("unsupported_feature_rules", {})
     if rules is None:
-        return
-    if not isinstance(rules, dict):
+        rules = {}
+    elif not isinstance(rules, dict):
         errors.append(f"`project_spec` file `{spec_path}` has non-object `unsupported_feature_rules`")
         return
+
+    missing_rules = sorted(
+        extension
+        for extension, status in support.items()
+        if str(status).upper() == "NO" and extension not in rules
+    )
+    if missing_rules:
+        errors.append(
+            f"`project_spec` file `{spec_path}` marks support=NO without unsupported_feature_rules for: "
+            + ", ".join(missing_rules)
+        )
 
     rule_fields = {"tokens", "summary_exclude_regex", "line_exclude_regex", "scope_warning_regex"}
     regex_fields = {"summary_exclude_regex", "line_exclude_regex", "scope_warning_regex"}

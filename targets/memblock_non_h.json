@@ -1,7 +1,7 @@
 {
   "name": "memblock_non_h",
   "title": "MemBlock non-H coverage target",
-  "description": "Analyze Spike MemBlock-related coverage for NanHu-V5.1 AP while excluding H extension, stage2, and project-unsupported memory features.",
+  "description": "Analyze Spike MemBlock-related coverage for NanHu-V5.1 AP while excluding H extension, stage2, and project-unsupported features.",
   "project_spec": "specs/nanhu_v5_1_ap.json",
   "coverage_focus": {
     "profile": "memblock_non_h",
@@ -31,6 +31,7 @@
       "Q/quad-precision memory forms",
       "Sv57 and Svnapot",
       "AIA, SMEPMP, pointer masking, and RAS paths",
+      "Other project-unsupported non-MemBlock extensions/features from project_spec unsupported_feature_rules, such as Zihintpause/Zihintntl, Supm/PM, vector crypto groups, Zk/Zkr, profile-version rows, and non_RVA23 unsupported rows",
       "RV32-only compressed floating memory forms such as c.flw/c.fsw",
       "Zawrs wait-on-reservation instructions",
       "Zicclsm misaligned-memory extension behavior as a positive in-scope feature",
@@ -74,6 +75,7 @@
     "Q/quad-precision memory targets",
     "Sv57 and Svnapot targets",
     "AIA, SMEPMP, pointer masking, and RAS targets",
+    "All project_spec NO rows outside the MemBlock slice, including non-MemBlock unsupported extensions/features such as Zihintpause/Zihintntl, Supm/PM, vector crypto groups, Zk/Zkr, profile-version rows, and non_RVA23 unsupported rows",
     "RV32-only compressed floating memory entries such as c_flw/c_flwsp/c_fsw/c_fswsp",
     "Zawrs wait-on-reservation instruction targets",
     "Zicclsm positive misaligned-memory extension targets",
@@ -510,6 +512,7 @@
     "Mark memtracer/log/device-specific paths as manual/special-run unless the default hyptest platform can observe them deterministically.",
     "Do duplicate search by semantic terms as well as mnemonics before proposing implementation.",
     "Apply the NanHu-V5.1 AP support matrix before proposing target gaps: Svinval/Svade/Svpbmt are in scope when memory-visible; Sv57/Svnapot/Svadu/H/Zacas/Zabha/Zfh/Q/Zawrs/Zicclsm-positive behavior are out of scope for this target.",
+    "Apply project_spec unsupported_feature_rules even for non-MemBlock features; a Spike coverage entry that matches any project_spec NO rule is out of scope for this target, not a MemBlock coverage gap.",
     "For compressed memory, keep the RV64-supported C integer and F/D entries; do not treat RV32-only c.flw/c.fsw entries as missing AP coverage.",
     "For misaligned-memory evidence, phrase candidates as trap priority, boundary split, or exception conversion behavior because Zicclsm is not supported by the project spec."
   ],

@@ -23,11 +23,14 @@ this block when `--command-template` is omitted:
 
 ```json
 "coverage_spike": {
-  "default_isa": "rv64imafdc_zicntr_zihpm",
+  "default_isa": "rv64imafdc_zicsr_zicntr_zihpm",
   "default_priv": "MSU",
   "default_args": [
     "--isa={default_isa}",
     "--priv={default_priv}"
+  ],
+  "must_include_isa_tokens": [
+    "zicsr"
   ],
   "notes": []
 }
@@ -37,6 +40,12 @@ this block when `--command-template` is omitted:
 `{spike_bin}` and `{elf}`. Items may reference scalar fields in the same
 `coverage_spike` object with Python format placeholders, such as
 `{default_isa}`.
+
+`must_include_isa_tokens` is a validation contract for project-supported
+Spike ISA tokens that must not be dropped from `default_isa`. This is useful
+when the support table uses a project/table label instead of the exact Spike
+token, for example a row such as `non_RVA23_smrnmi` whose runner token is
+`smrnmi`.
 
 Keep these defaults project-owned rather than script-owned. For example, a
 target such as `targets/memblock_non_h.json` points to
@@ -76,6 +85,16 @@ For a mature project spec, every `isa_profile.support` item marked `NO` should
 have an `unsupported_feature_rules` entry. Rules may be broad for non-target
 areas, but keep tokens explicit enough that active target checks do not match
 ordinary words or short abbreviations by accident.
+
+After creating or editing a project spec, run:
+
+```bash
+python3 scripts/validate_spec.py specs/<name>.json
+```
+
+This validates `coverage_spike.default_args`, support status values, regex
+syntax, and that every `support == "NO"` row has an
+`unsupported_feature_rules` entry.
 
 Target files refer to a project spec with:
 
