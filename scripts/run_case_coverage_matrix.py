@@ -57,6 +57,7 @@ ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 DEFAULT_REQUIRED_MARKERS = ["PASSED"]
 DEFAULT_FORBIDDEN_MARKERS = ["FAILED", "untested exception", "ERROR:"]
+DEFAULT_TIMEOUT_SECONDS = 15.0
 
 
 @dataclass
@@ -190,7 +191,12 @@ def parse_args() -> argparse.Namespace:
             "coverage_spike.default_args."
         ),
     )
-    runner.add_argument("--timeout", type=float, default=15.0)
+    runner.add_argument(
+        "--timeout",
+        type=float,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help=f"timeout in seconds for one Spike run; default {DEFAULT_TIMEOUT_SECONDS:g}s",
+    )
     runner.add_argument("--required-marker", action="append", default=None)
     runner.add_argument("--forbidden-marker", action="append", default=None)
     runner.add_argument("--keep-ansi", action="store_true")

@@ -12,6 +12,7 @@
 ## 目录
 
 - `SKILL.md`: Codex skill 主说明。
+- `references/`: 长格式引用说明。`reporting_contract.md` 放最终报告、输出路径、test-point card 和 handoff packet 模板；`single_case_increment.md` / `path_marker_instrumentation.md` 放专门证据工作流。
 - `specs/`: 当前项目实现配置，例如 coverage Spike runner、环境变量接口、源码/覆盖率证据来源。
 - `targets/`: 覆盖率分析目标配置。具体看哪块覆盖率、范围、排除项和维度放这里。
 - `scripts/analyze_spike_gcov.py`: 解析 `gcov -b -c` summary，按 target 维度排序支撑证据缺口，并标出 `entry` / `shared-path` / `mixed` 证据类型。
@@ -214,8 +215,8 @@ $HYPTEST_SPIKE_COV/cov_runs/<target_name>/<run_tag>/
 
 除非 prompt 明确指定固定输出路径，否则 agent 自己按上面规则选最佳路径。
 `target_name` 来自 target JSON 的 `name` 字段，例如 `memblock_non_h`。
-`run_tag` 用日期加目的，例如 `20260521_current`、`20260521_all_cases`、
-`20260521_after_new_mem_cases`。不要把运行结果放在 skill 目录里；skill
+`run_tag` 用日期加目的，例如 `<YYYYMMDD>_current`、`<YYYYMMDD>_all_cases`、
+`<YYYYMMDD>_after_new_mem_cases`。不要把运行结果放在 skill 目录里；skill
 目录只保存工具、target、reference 和 README。
 
 推荐文件名：
@@ -291,7 +292,7 @@ HYPTEST_SPIKE_COV_BIN=$HYPTEST_SPIKE_COV/build/spike
 
 这里的 `HYPTEST_SPIKE_COV_BIN` 是 coverage skill 专用的 Spike，不是 hyptest 里编译/普通自检用的 `HYPTEST_SPIKE_BIN`。coverage matrix 只消费 `case_elf_asm/spike` 里已经存在的 ELF，不负责编译 hyptest case，也不调用 hyptest 的普通 Spike 命令。默认 runner 参数来自所选 target 引用的 `specs/*.json`：脚本读取 `coverage_spike.default_args` 后生成 `{spike_bin} <spec args> {elf}`。例如 `targets/memblock_non_h.json` 引到 `specs/nanhu_v5_1_ap.json`，默认会自动带 NanHu-V5.1 AP 的 `--isa=...` 和 `--priv=MSU`，不需要每次手写。只有临时特殊实验需要覆盖项目默认 runner 时，才传 `--command-template`。
 
-summary 文件不做通用默认，因为它和 target/模块绑定。跑 summary 分析时显式传 `--summary <具体 summary.txt>`；如果某个人固定只分析一个目标，也可以在自己的 shell 里临时设 `SPIKE_COV_SUMMARY`，但 skill 不把它当成必需接口。
+summary 文件不做通用默认，因为它和 target/模块绑定。跑 summary 分析时显式传 `--summary <具体 summary.txt>`，或从选定 target/run 的实际产物里选择具体 summary。
 
 只有目录布局不标准时，再在 `~/.bashrc` 里覆盖对应变量，例如 `SPIKE_BUILD_DIR`、`SPIKE_GCOV_RAW`、`SPIKE_SOURCE_ROOT`、`HYPTEST_ELF_DIR` 或 `HYPTEST_SPIKE_COV_BIN`。
 
@@ -304,8 +305,9 @@ python3 scripts/run_case_coverage_matrix.py --check-env
 如果不是临时试跑，再设定正式报告和运行证据目录：
 
 ```bash
-REPORT_DIR="$HYPTEST_SPIKE_COV/cov_doc/reports/memblock_non_h/20260521_current"
-RUN_DIR="$HYPTEST_SPIKE_COV/cov_runs/memblock_non_h/20260521_current"
+RUN_TAG="$(date +%Y%m%d)_current"
+REPORT_DIR="$HYPTEST_SPIKE_COV/cov_doc/reports/memblock_non_h/$RUN_TAG"
+RUN_DIR="$HYPTEST_SPIKE_COV/cov_runs/memblock_non_h/$RUN_TAG"
 mkdir -p "$REPORT_DIR" "$RUN_DIR"
 ```
 
@@ -431,6 +433,7 @@ python3 scripts/run_case_coverage_matrix.py \
 - `--dimension vector`: 只用 target 里名称包含 `vector` 的 inspection hints 解析 `.gcno`。
 - `--requirements-json req.json` / `--requirements-dir dir`: 给 compare 加 must-pass line/branch/call 证据点。
 - `--reset-scope selected|all|none`: 每个 case 前删除哪些 `.gcda` counter；默认 `selected`。
+- `--timeout 15`: 单个 coverage Spike runner 的超时时间；默认就是 15 秒。
 - `--check-env`: 打印当前 `HYPTEST_HOME`、`HYPTEST_SPIKE_COV` 和推导出的 build/raw-gcov/source-root/ELF/coverage-Spike 路径后退出，适合第一次配置后自检。
 - `--dry-run`: 只看会选哪些 case 和 `.gcno`，不运行。
 - `--command-template`: 支持 `{spike_bin}`、`{elf}`、`{case_name}`、`{run_name}`、`{case_dir}` 等占位符；省略时使用 target 的 project spec `coverage_spike.default_args`，例如 `{spike_bin} --isa=<spec default_isa> --priv=MSU {elf}`。需要 Spike commit/log 证据时可显式覆盖成 `{spike_bin} --isa=<spec ISA> --priv=MSU -l --log-commits --log={case_dir}/spike.log {elf}`。显式传入后脚本完全按该模板执行。
@@ -500,7 +503,9 @@ bash scripts/run_smoke_tests.sh
 默认 smoke 只用内置合成 fixture，不需要真实 coverage repo。需要顺手验证当前机器的真实 gcov 输入时，再打开外部 smoke：
 
 ```bash
-HYPTEST_SPIKE_COV_EXTERNAL_SMOKE=1 bash scripts/run_smoke_tests.sh
+HYPTEST_SPIKE_COV_EXTERNAL_SMOKE=1 \
+HYPTEST_SPIKE_COV_EXTERNAL_SUMMARY="$HYPTEST_SPIKE_COV/cov_doc/gcov_raw/<summary-file>.txt" \
+bash scripts/run_smoke_tests.sh
 ```
 
 ## 目标配置

@@ -6,7 +6,7 @@ cd "$ROOT_DIR"
 
 OUT_DIR="${HYPTEST_SPIKE_COV_SMOKE_OUT:-${TMPDIR:-/tmp}/spike_cov_skill_smoke}"
 EXTERNAL_SMOKE="${HYPTEST_SPIKE_COV_EXTERNAL_SMOKE:-0}"
-SUMMARY="${SPIKE_COV_SUMMARY:-}"
+SUMMARY="${HYPTEST_SPIKE_COV_EXTERNAL_SUMMARY:-}"
 GCOV_RAW="${SPIKE_GCOV_RAW:-}"
 SOURCE_ROOT="${SPIKE_SOURCE_ROOT:-}"
 if [[ -n "${HYPTEST_SPIKE_COV:-}" ]]; then
@@ -214,7 +214,7 @@ grep -q "missing_entries" "$OUT_DIR/synth_handoff.md"
 require_report_sections "$OUT_DIR/synth_handoff.md"
 
 if [[ "$EXTERNAL_SMOKE" == "1" ]]; then
-  : "${SUMMARY:?set SPIKE_COV_SUMMARY to a concrete target summary file when HYPTEST_SPIKE_COV_EXTERNAL_SMOKE=1}"
+  : "${SUMMARY:?set HYPTEST_SPIKE_COV_EXTERNAL_SUMMARY to a concrete target summary file when HYPTEST_SPIKE_COV_EXTERNAL_SMOKE=1}"
   : "${GCOV_RAW:?set HYPTEST_SPIKE_COV or SPIKE_GCOV_RAW when HYPTEST_SPIKE_COV_EXTERNAL_SMOKE=1}"
   : "${SOURCE_ROOT:?set HYPTEST_SPIKE_COV or SPIKE_SOURCE_ROOT when HYPTEST_SPIKE_COV_EXTERNAL_SMOKE=1}"
 
